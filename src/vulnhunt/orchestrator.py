@@ -2,7 +2,14 @@ from .models import RunStatus, CompletenessSignal
 from .workers import WorkerPool
 from .state import now
 class Orchestrator:
-    def __init__(self,config,store,claude,codex): self.config=config; self.store=store; self.claude=claude; self.codex=codex; self.run=store.read_run(); self.prior=[]
+    def __init__(self,config,store,claude,codex):
+        self.config=config; self.store=store; self.claude=claude; self.codex=codex; self.run=store.read_run(); self.prior=[]; self.plan=None
+        if self.run.current_round:
+            try:
+                from .models import Plan
+                self.plan=Plan.from_dict(store.read_plan(self.run.current_round))
+            except (FileNotFoundError, KeyError, ValueError):
+                pass
     def run_loop(self):
         try:
             while self.run.status not in (RunStatus.COMPLETE,RunStatus.FAILED,RunStatus.ABORTED): self.step()

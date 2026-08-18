@@ -13,13 +13,13 @@ class CodexWrapper:
                 f"相关上下文：{task.relevant_context or '无'}\n"
                 "请严格只输出一个 JSON 对象，不要输出 Markdown、解释文字或额外内容。"
                 "字段必须包含 status、summary、findings；status 使用 SUCCESS、FAILURE 或 PARTIAL。")
-        args=[resolve_executable([self.config.codex_exec]),'exec','', '-C',str(workspace),'--json','-o',str(Path(workspace)/'_last_message.json'),'-s',self.config.codex_sandbox,'--skip-git-repo-check','--ephemeral','--color','never']; r=run_process(args,cwd=workspace,input_text=prompt,timeout_s=self.config.codex_timeout_s,cancel_event=self.cancel_event); p=Path(workspace)/'_last_message.json'
+        args=[resolve_executable([self.config.codex_exec]),'exec','', '-C',str(workspace),'--json','-o',str(Path(workspace)/'_last_message.json'),'-s',self.config.codex_sandbox,'--skip-git-repo-check','--ephemeral','--color','never']; r=run_process(args,cwd=workspace,input_text=prompt,timeout_s=self.config.codex_timeout_s,cancel_event=self.cancel_event,on_stdout_line=lambda line: self.logger("CODEX", line)); p=Path(workspace)/'_last_message.json'
         if p.exists():
             for _ in range(20):
                 try:
                     raw=p.read_text(encoding='utf-8').strip()
                     if raw:
-                        d=json.loads(raw); d['task_id']=task.id; result=WorkerResult.from_dict(d); self.logger("CODEX", f"任务 {task.id} 完成：{result.summary or '无摘要'}，发现 {len(result.findings)} 个问题"); return result
+                        d=json.loads(raw); d['task_id']=task.id; result=WorkerResult.from_dict(d); self.logger("CODEX", "完整结果：\n" + json.dumps(result.to_dict(), ensure_ascii=False, indent=2)); return result
                 except (OSError, json.JSONDecodeError):
                     time.sleep(0.05)
         result=WorkerResult(task.id,r.exit_code,TaskResultStatus.FAILURE,error=r.stderr,stdout_tail=r.stdout[-4000:],stderr_tail=r.stderr[-4000:],duration_s=r.duration_s); self.logger("ERROR", f"任务 {task.id} 失败：{result.error or '无结果文件'}"); return result

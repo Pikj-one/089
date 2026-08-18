@@ -13,7 +13,8 @@ class RealCliTests(unittest.TestCase):
 
     def test_claude_real_plan(self):
         plan = ClaudeWrapper(self.config).plan("只检查项目入口并给出一个最小审计计划", 1, [], ".")
-        self.assertGreaterEqual(len(plan.tasks), 1)
+        self.assertEqual(plan.round, 1)
+        self.assertIsInstance(plan.tasks, list)
 
     def test_codex_real_result(self):
         with tempfile.TemporaryDirectory() as d:

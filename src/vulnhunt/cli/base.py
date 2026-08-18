@@ -17,8 +17,19 @@ def run_process(args,cwd=None,env=None,timeout_s=60,input_text="",on_stdout_line
                 if callback: callback(line.rstrip('\n'))
         ts=[threading.Thread(target=read,args=(p.stdout,out,on_stdout_line)),threading.Thread(target=read,args=(p.stderr,err))]
         [t.start() for t in ts]
-        try: p.communicate(input=input_text,timeout=timeout_s)
-        except subprocess.TimeoutExpired:
-            subprocess.run(['taskkill','/pid',str(p.pid),'/T','/F'],capture_output=True); p.wait(); return ProcResult(-1,''.join(out),''.join(err),True,time.monotonic()-start)
-        [t.join() for t in ts]; return ProcResult(p.returncode,''.join(out),''.join(err),False,time.monotonic()-start)
+        if input_text:
+            p.stdin.write(input_text)
+        p.stdin.close()
+        deadline=time.monotonic()+timeout_s
+        while p.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.05)
+        if p.poll() is None:
+            subprocess.run(['taskkill','/pid',str(p.pid),'/T','/F'],capture_output=True); p.wait(); timed_out=True
+        else:
+            timed_out=False
+        [t.join(timeout=2) for t in ts]
+        for stream in (p.stdout, p.stderr):
+            try: stream.close()
+            except (OSError, ValueError): pass
+        return ProcResult(p.returncode,''.join(out),''.join(err),timed_out,time.monotonic()-start)
     except OSError as e: return ProcResult(-1,'',str(e),False,time.monotonic()-start)

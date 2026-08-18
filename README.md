@@ -96,6 +96,16 @@ python -m unittest discover -s tests -v
 python -m compileall -q src
 ```
 
+真实 CLI 测试默认跳过，避免意外消耗 token。确认本机 CLI、登录状态和权限后显式开启：
+
+```powershell
+$env:PYTHONPATH = "src"
+$env:VULNHUNT_REAL_TESTS = "1"
+python -m unittest tests.test_real_cli -v
+```
+
+真实测试会分别调用 Claude 生成最小 Plan、调用 Codex 生成最小结构化结果；通常比单元测试耗时更长。
+
 ## 交互式 TUI
 
 启动 TUI 后先输入目标，随后使用 `>` 提示符输入命令：

@@ -13,4 +13,8 @@ class ClaudeWrapper:
         self.session_id=self.session_id or str(uuid.uuid4()); args=[resolve_executable([self.config.claude_exec]),'-p','', '--output-format','json','--permission-mode','plan','--add-dir',self.config.target_dir,'--session-id',self.session_id]
         r=run_process(args,cwd=work_dir,input_text=planner_prompt(goal,round_no,prior),timeout_s=self.config.claude_timeout_s)
         if r.exit_code: raise RuntimeError(r.stderr or 'claude failed')
-        raw=json.loads(r.stdout).get('result',{}).get('text',r.stdout).strip().removeprefix('```json').removesuffix('```').strip(); plan=Plan.from_dict(json.loads(raw)); self.logger("CLAUDE", f"第 {round_no} 轮规划完成：拆分 {len(plan.tasks)} 个任务，攻击面包括 {', '.join(plan.attack_surface) or '未提供'}"); return plan
+        envelope=json.loads(r.stdout)
+        result=envelope.get('result', r.stdout)
+        raw=result.get('text', '') if isinstance(result, dict) else result
+        raw=(raw or r.stdout).strip().removeprefix('```json').removesuffix('```').strip()
+        plan=Plan.from_dict(json.loads(raw)); self.logger("CLAUDE", f"第 {round_no} 轮规划完成：拆分 {len(plan.tasks)} 个任务，攻击面包括 {', '.join(plan.attack_surface) or '未提供'}"); return plan

@@ -2,6 +2,8 @@ import threading
 import time
 from pathlib import Path
 import json
+import queue
+import sys
 
 class TUI:
     """Small stdlib console facade; orchestration remains usable without a TTY."""
@@ -33,14 +35,30 @@ class TUI:
 
     def command_loop(self):
         """Run the MVP command loop. Commands are intentionally line-oriented."""
+        commands = queue.Queue()
+        def read_commands():
+            while True:
+                try:
+                    commands.put(input("> ").strip().lower())
+                except (EOFError, KeyboardInterrupt):
+                    commands.put(None)
+                    return
+        reader = threading.Thread(target=read_commands, daemon=True)
+        reader.start()
         while True:
+            if self.thread and not self.thread.is_alive() and commands.empty():
+                self._clear_prompt()
+                return
             try:
-                command = input("> ").strip().lower()
-            except (EOFError, KeyboardInterrupt):
+                command = commands.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            if command is None:
                 self.abort()
                 return
             if command in ("quit", "exit"):
                 self.abort()
+                self._clear_prompt()
                 return
             if command == "abort":
                 self.abort()
@@ -54,6 +72,12 @@ class TUI:
                 self._show_files("findings", ".json")
             elif command:
                 self.log("UI", "commands: status, tasks, findings, abort, quit")
+
+    def _clear_prompt(self):
+        if sys.stdout.isatty():
+            with self._lock:
+                sys.stdout.write("\r\x1b[2K")
+                sys.stdout.flush()
 
     def _show_json(self, name):
         if not self.store:

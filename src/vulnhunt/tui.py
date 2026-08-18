@@ -79,10 +79,9 @@ class TUI:
                 self.log("UI", "commands: status, tasks, findings, abort, quit")
 
     def _clear_prompt(self):
-        if sys.stdout.isatty():
-            with self._lock:
-                sys.stdout.write("\r\x1b[2K")
-                sys.stdout.flush()
+        with self._lock:
+            sys.stdout.write("\r\x1b[2K\r")
+            sys.stdout.flush()
 
     def _show_json(self, name):
         if not self.store:

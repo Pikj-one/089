@@ -7,7 +7,7 @@ def resolve_executable(candidates):
     for c in candidates:
         if Path(c).exists(): return str(c)
     return candidates[0] if candidates else ""
-def run_process(args,cwd=None,env=None,timeout_s=60,input_text="",on_stdout_line=None):
+def run_process(args,cwd=None,env=None,timeout_s=60,input_text="",on_stdout_line=None,cancel_event=None):
     start=time.monotonic(); out=[]; err=[]
     try:
         p=subprocess.Popen(args,cwd=cwd,env=env or os.environ.copy(),stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,encoding='utf-8',errors='replace',shell=False)
@@ -22,6 +22,8 @@ def run_process(args,cwd=None,env=None,timeout_s=60,input_text="",on_stdout_line
         p.stdin.close()
         deadline=time.monotonic()+timeout_s
         while p.poll() is None and time.monotonic() < deadline:
+            if cancel_event is not None and cancel_event.is_set():
+                subprocess.run(['taskkill','/pid',str(p.pid),'/T','/F'],capture_output=True); p.wait(); return ProcResult(-2,''.join(out),''.join(err),False,time.monotonic()-start)
             time.sleep(0.05)
         if p.poll() is None:
             subprocess.run(['taskkill','/pid',str(p.pid),'/T','/F'],capture_output=True); p.wait(); timed_out=True

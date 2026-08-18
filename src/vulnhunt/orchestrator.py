@@ -4,7 +4,7 @@ from .state import now
 import threading
 class Orchestrator:
     def __init__(self,config,store,claude,codex):
-        self.config=config; self.store=store; self.claude=claude; self.codex=codex; self.run=store.read_run(); self.prior=[]; self.plan=None; self._abort=threading.Event()
+        self.config=config; self.store=store; self.claude=claude; self.codex=codex; self.run=store.read_run(); self.prior=[]; self.plan=None; self._abort=threading.Event(); self.claude.cancel_event=self._abort; self.codex.cancel_event=self._abort
         if self.run.current_round:
             try:
                 from .models import Plan
@@ -15,6 +15,9 @@ class Orchestrator:
         try:
             while self.run.status not in (RunStatus.COMPLETE,RunStatus.FAILED,RunStatus.ABORTED): self.step()
         except KeyboardInterrupt: self.run.status=RunStatus.ABORTED; self.save()
+        except Exception:
+            self.run.status=RunStatus.ABORTED if self._abort.is_set() else RunStatus.FAILED
+            self.save()
         return self.run
     def request_abort(self): self._abort.set()
     def save(self): self.run.updated_at=now(); self.store.save_run(self.run)

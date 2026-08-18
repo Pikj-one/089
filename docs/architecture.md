@@ -23,6 +23,16 @@ Claude Code 适合理解目标并拆分审计面，Codex CLI 适合在自身 san
 
 ## CLI 联调
 
+### TUI
+
+交互入口为：
+
+```powershell
+python -m vulnhunt tui
+```
+
+输入目标后，`>` 提示符支持 `status`、`tasks`、`findings`、`abort` 和 `quit`。命令循环与编排线程分离，查询只读取已经落盘的证据文件；因此输出可能略滞后于正在运行的 worker。
+
 先使用 dry-run 验证编排链路：
 
 ```powershell

@@ -1,0 +1,6 @@
+runs_root = "runs"
+target_dir = "."
+max_rounds = 2
+max_workers = 3
+plan_retry_max = 2
+dry_run = true

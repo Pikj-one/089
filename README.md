@@ -37,15 +37,23 @@ vulnhunt start "审计目标目录"
 
 ## 配置真实 CLI
 
-复制并修改 `config.toml` 中的路径和开关：
+如果 `claude` 和 `codex` 已加入系统 PATH，只需修改开关：
 
 ```toml
-claude_exec = "C:/Users/Cutey/.local/bin/claude.exe"
-codex_exec = "C:/path/to/codex.exe"
+claude_exec = "claude"
+codex_exec = "codex"
 target_dir = "."
 dry_run = false
 max_rounds = 2
 max_workers = 3
+```
+
+也可以通过全局环境变量覆盖：
+
+```powershell
+$env:VULNHUNT_CLAUDE_EXEC = "claude"
+$env:VULNHUNT_CODEX_EXEC = "codex"
+$env:VULNHUNT_DRY_RUN = "false"
 ```
 
 启动前可以检查 CLI：

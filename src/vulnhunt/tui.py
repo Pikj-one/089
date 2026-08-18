@@ -53,6 +53,11 @@ class TUI:
                 command = commands.get(timeout=0.1)
             except queue.Empty:
                 continue
+            except KeyboardInterrupt:
+                self.abort()
+                self._clear_prompt()
+                self.log("UI", "收到 Ctrl+C，正在优雅退出")
+                return
             if command is None:
                 self.abort()
                 return

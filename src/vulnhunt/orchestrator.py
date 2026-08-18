@@ -1,9 +1,10 @@
 from .models import RunStatus, CompletenessSignal
 from .workers import WorkerPool
 from .state import now
+import threading
 class Orchestrator:
     def __init__(self,config,store,claude,codex):
-        self.config=config; self.store=store; self.claude=claude; self.codex=codex; self.run=store.read_run(); self.prior=[]; self.plan=None
+        self.config=config; self.store=store; self.claude=claude; self.codex=codex; self.run=store.read_run(); self.prior=[]; self.plan=None; self._abort=threading.Event()
         if self.run.current_round:
             try:
                 from .models import Plan
@@ -15,8 +16,10 @@ class Orchestrator:
             while self.run.status not in (RunStatus.COMPLETE,RunStatus.FAILED,RunStatus.ABORTED): self.step()
         except KeyboardInterrupt: self.run.status=RunStatus.ABORTED; self.save()
         return self.run
+    def request_abort(self): self._abort.set()
     def save(self): self.run.updated_at=now(); self.store.save_run(self.run)
     def step(self):
+        if self._abort.is_set(): self.run.status=RunStatus.ABORTED; self.save(); return
         if self.run.status==RunStatus.INIT: self.run.current_round=1; self.run.status=RunStatus.PLANNING
         elif self.run.status==RunStatus.PLANNING:
             self.plan=self.claude.plan(self.run.goal,self.run.current_round,self.prior,self.store.root); self.store.save_plan(self.run.current_round,self.plan); self.run.status=RunStatus.DISPATCHING

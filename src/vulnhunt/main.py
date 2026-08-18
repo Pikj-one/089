@@ -16,10 +16,10 @@ def main(argv=None):
         try: goal=input('goal> ').strip()
         except (EOFError, KeyboardInterrupt): return
         if not goal: return
-        c=load_config(a.config); run=Run(uuid.uuid4().hex[:12],goal,datetime.now(timezone.utc).isoformat(),max_rounds=c.max_rounds,config_snapshot=c.__dict__,target_dir=c.target_dir); store=RunStore.create(c.runs_root,run); claude=ClaudeWrapper(c); codex=CodexWrapper(c)
+        c=load_config(a.config); tui=TUI(); run=Run(uuid.uuid4().hex[:12],goal,datetime.now(timezone.utc).isoformat(),max_rounds=c.max_rounds,config_snapshot=c.__dict__,target_dir=c.target_dir); store=RunStore.create(c.runs_root,run); claude=ClaudeWrapper(c,tui.log); codex=CodexWrapper(c,tui.log); orchestrator=Orchestrator(c,store,claude,codex)
         def execute():
-            result=Orchestrator(c,store,claude,codex).run_loop(); tui.log('ORCH', result.status.value); tui.log('ORCH', str(build_report(store.root)))
-        worker=__import__('threading').Thread(target=execute,daemon=True); worker.start(); tui.attach(store,worker); tui.command_loop(); return
+            result=orchestrator.run_loop(); tui.log('ORCH', f"运行结束：{result.status.value}"); tui.log('ORCH', f"报告已生成：{build_report(store.root)}")
+        worker=__import__('threading').Thread(target=execute,daemon=True); worker.start(); tui.attach(store,worker,orchestrator); tui.command_loop(); return
     c=load_config(getattr(a,'config','config.toml')); claude=ClaudeWrapper(c); codex=CodexWrapper(c)
     if a.cmd=='doctor': print('claude:',claude.health_check()); print('codex:',codex.health_check()); return
     if a.cmd=='resume': store=RunStore(a.run_dir)

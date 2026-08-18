@@ -10,20 +10,26 @@ class TUI:
         self._aborted = threading.Event()
         self.store = None
         self.thread = None
+        self.orchestrator = None
+        self._colors = {"UI": "\x1b[90m", "CLAUDE": "\x1b[94m", "CODEX": "\x1b[93m", "ORCH": "\x1b[96m", "ERROR": "\x1b[91m"}
 
     def log(self, component, message):
         with self._lock:
-            print(f"[{time.strftime('%H:%M:%S')}][{component}] {message}", flush=True)
+            color = self._colors.get(component, "\x1b[37m") if __import__('sys').stdout.isatty() else ""
+            reset = "\x1b[0m" if color else ""
+            print(f"{color}[{time.strftime('%H:%M:%S')}][{component}]{reset} {message}", flush=True)
 
     def abort(self):
         self._aborted.set()
+        if self.orchestrator:
+            self.orchestrator.request_abort()
 
     @property
     def aborted(self):
         return self._aborted.is_set()
 
-    def attach(self, store, thread):
-        self.store, self.thread = store, thread
+    def attach(self, store, thread, orchestrator=None):
+        self.store, self.thread, self.orchestrator = store, thread, orchestrator
 
     def command_loop(self):
         """Run the MVP command loop. Commands are intentionally line-oriented."""

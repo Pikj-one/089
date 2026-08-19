@@ -16,3 +16,10 @@ class StateTests(unittest.TestCase):
             expected_prefix = Path(d) / datetime.now().strftime("%Y/%m/%d/%H-%M")
             self.assertEqual(store.root.parent, expected_prefix)
             self.assertFalse(list(Path(d).rglob("*.tmp")))
+
+    def test_new_run_copies_claude_instructions(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = RunStore.create(d, Run("r2", "goal", "now"))
+            claude_md = Path(__file__).parents[1] / "CLAUDE.md"
+            if claude_md.exists():
+                self.assertEqual((store.root / "CLAUDE.md").read_text(encoding="utf-8"), claude_md.read_text(encoding="utf-8"))

@@ -1,6 +1,6 @@
 from pathlib import Path
 from datetime import datetime, timezone
-import json, os
+import json, os, shutil
 from .models import Run
 
 def now(): return datetime.now(timezone.utc).isoformat()
@@ -12,6 +12,8 @@ class RunStore:
         started_at=datetime.now().strftime('%Y/%m/%d/%H-%M')
         s=cls(Path(runs_root)/started_at/run.run_id)
         for p in (s.root,s.plans,s.tasks,s.findings,s.logs,s.report): p.mkdir(parents=True,exist_ok=True)
+        project_claude_md=Path(__file__).resolve().parents[2]/'CLAUDE.md'
+        if project_claude_md.is_file(): shutil.copy2(project_claude_md,s.root/'CLAUDE.md')
         s.save_run(run); return s
     def _write(self,name,obj):
         p=self.root/name; p.parent.mkdir(parents=True,exist_ok=True); tmp=p.with_suffix(p.suffix+'.tmp'); tmp.write_text(json.dumps(obj,ensure_ascii=False,indent=2),encoding='utf-8'); os.replace(tmp,p)

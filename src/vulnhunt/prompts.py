@@ -1,18 +1,47 @@
 import json
-def planner_prompt(goal, round_no, prior=None):
-    return f"""
-你的职责是Plan，有十个帮手可以随意使用，他们将作为你的"手"来执行。
-你的任务是为漏洞挖掘规划出可行路径
-你的目的是获取Critical/High漏洞
 
-请严格只输出一个 JSON 对象，不要输出 Markdown 或解释文字。
-JSON 必须只包含 tasks 字段，不要包含 round、goal_restatement、notes、attack_surface、next_strategy 或 completeness_signal。
+
+def planner_prompt(goal, round_no, prior=None):
+    return rf"""
+你有十个codex可以随意使用(但请根据实际情况调度而不是一股脑全部派出)，他们将作为Explore Agent来执行一切(注:Explore Agent受Plan模式影响而codex不会)。
+任务：为漏洞挖掘规划出可行路径
+目的：获取Critical/High漏洞
 
 ---
 
-首轮你只会获得一个域名，之后的每一轮都会有上一轮结果帮手执行的结果
 
-目标：{goal}；
+
+## 输入内容
+目标：{goal}是需要漏洞挖掘的域名,不要让codex去获取子域名和历史CVE 情报
+
 当前轮次：{round_no}；
 上轮结果：{json.dumps(prior or [],ensure_ascii=False)}。
+
+## 输出期望
+### 输出约定
+每个codex都是相互独立的,不要让他们直接依赖其他codex的成果来执行,必须通过你中转
+你的最终产物应该是一份位于`C:\Users\Cutey\.claude\plans`的完整计划里面不存JSON数组,一段调用ExitPlanMode后产出的tasks JSON数组
+### 输出格式
+你只能输出JSON数组,系统会把每个task转发给codex,所以你只能必须百分百是如下输出格式:
+{{
+    "tasks": [
+      {{
+        "id": "task_1",
+        "title": "路径审计",
+        "description": "检查路径穿越问题",
+        "priority"(可选字段): 1,
+        "required_output"(可选字段): "输出漏洞证据和修复建议",
+        "relevant_context"(可选字段): ""
+      }},
+      {{
+        "id": "task_2",
+        "title": "xxx",
+        "description": "xxx",
+        "priority"(可选字段): x,
+        "required_output"(可选字段): "xxx",
+        "relevant_context"(可选字段): ""
+      }}
+    ]
+  }}
+
 """

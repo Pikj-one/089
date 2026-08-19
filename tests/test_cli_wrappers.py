@@ -26,5 +26,24 @@ class WrapperUnitTests(unittest.TestCase):
             result = CodexWrapper(Config()).exec_task(TaskSpec("task_1", "test", "test"), Path(d))
         self.assertEqual(result.status, TaskResultStatus.SUCCESS)
 
+    def test_codex_wrapper_resolves_relative_workspace(self):
+        captured = {}
+
+        def fake_process(args, cwd=None, **kwargs):
+            captured['args'] = args
+            captured['cwd'] = cwd
+            output_file = Path(args[args.index("-o") + 1])
+            output_file.write_text(json.dumps({"status": "SUCCESS", "summary": "ok", "findings": []}), encoding="utf-8")
+            return ProcResult(0, "", "")
+
+        with tempfile.TemporaryDirectory() as d, patch("vulnhunt.cli.codex.run_process", side_effect=fake_process):
+            relative_workspace = Path(d) / "workspace"
+            relative_workspace.mkdir()
+            result = CodexWrapper(Config()).exec_task(TaskSpec("task_1", "test", "test"), relative_workspace)
+
+        self.assertEqual(result.status, TaskResultStatus.SUCCESS)
+        self.assertTrue(Path(captured['cwd']).is_absolute())
+        self.assertTrue(Path(captured['args'][captured['args'].index("-C") + 1]).is_absolute())
+
 
 if __name__ == "__main__": unittest.main()

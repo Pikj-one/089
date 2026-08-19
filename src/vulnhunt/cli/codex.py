@@ -6,6 +6,10 @@ class CodexWrapper:
     def __init__(self,config,logger=None,store=None): self.config=config; self.logger=logger or (lambda component,message: None); self.cancel_event=None; self.store=store
     def health_check(self): return run_process([resolve_executable([self.config.codex_exec]),'--version'],timeout_s=20).exit_code==0
     def exec_task(self,task,workspace):
+        # workspace 可能来自 runs_root 的相对路径，而子进程同时使用它作为 cwd。
+        # Codex 会相对于 cwd 再解析 -C/-o；因此这里必须先固定为绝对路径，
+        # 避免出现 workspace\runs\... 这样的错误嵌套路径（Windows 下报 os error 3）。
+        workspace=Path(workspace).resolve()
         prompt=(f"任务：{task.description}\n"
                 f"要求输出：{task.required_output}\n"
                 f"相关上下文：{task.relevant_context or '无'}\n"

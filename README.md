@@ -26,7 +26,7 @@ $env:PYTHONPATH = "src"
 python -m vulnhunt start "审计 demo/target.py 是否存在路径穿越"
 ```
 
-默认配置启用 `dry_run = true`，运行结束后会在 `runs/<run_id>/report/` 生成 `report.md` 和 `report.json`。
+默认配置启用 `dry_run = true`，运行结束后会在 `runs/<年>/<月>/<日>/<时>-<分>-<run_id>/report/` 生成 `report.md` 和 `report.json`。
 
 也可以安装本地命令：
 
@@ -69,7 +69,7 @@ python -m vulnhunt doctor
 运行目录采用以下布局：
 
 ```text
-runs/<run_id>/
+runs/<年>/<月>/<日>/<时>-<分>-<run_id>/
 ├── run.json
 ├── state.json
 ├── plans/
@@ -83,7 +83,7 @@ runs/<run_id>/
 恢复已有运行：
 
 ```powershell
-python -m vulnhunt resume runs/<run_id>
+python -m vulnhunt resume runs/<年>/<月>/<日>/<时>-<分>-<run_id>
 ```
 
 `runs/` 默认被 Git 忽略，适合保存本地运行证据，不会进入项目提交。

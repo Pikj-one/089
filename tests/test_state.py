@@ -1,4 +1,5 @@
 import sys, tempfile, unittest
+from datetime import datetime
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 from vulnhunt.models import Run
@@ -12,4 +13,6 @@ class StateTests(unittest.TestCase):
             store.save_state({"status": "INIT"})
             self.assertEqual(store.read_run().run_id, "r1")
             self.assertEqual(store.read_state()["status"], "INIT")
+            expected_prefix = Path(d) / datetime.now().strftime("%Y/%m/%d/%H-%M")
+            self.assertEqual(store.root.parent, expected_prefix)
             self.assertFalse(list(Path(d).rglob("*.tmp")))

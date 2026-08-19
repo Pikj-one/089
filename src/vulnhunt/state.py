@@ -9,7 +9,8 @@ class RunStore:
         self.root=Path(run_dir); self.plans=self.root/'plans'; self.tasks=self.root/'tasks'; self.findings=self.root/'findings'; self.logs=self.root/'logs'; self.report=self.root/'report'
     @classmethod
     def create(cls, runs_root, run):
-        s=cls(Path(runs_root)/run.run_id)
+        started_at=datetime.now().strftime('%Y/%m/%d/%H-%M')
+        s=cls(Path(runs_root)/started_at/run.run_id)
         for p in (s.root,s.plans,s.tasks,s.findings,s.logs,s.report): p.mkdir(parents=True,exist_ok=True)
         s.save_run(run); return s
     def _write(self,name,obj):

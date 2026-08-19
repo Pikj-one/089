@@ -6,7 +6,7 @@ from vulnhunt.models import Plan, TaskSpec, WorkerResult
 
 class ModelTests(unittest.TestCase):
     def test_plan_roundtrip(self):
-        plan = Plan(1, [TaskSpec("task_1", "scan", "scan it", 0)])
+        plan = Plan(1, [TaskSpec("task_1", "scan", "scan it")])
         restored = Plan.from_dict(plan.to_dict())
         self.assertEqual(restored.tasks[0].id, "task_1")
         self.assertEqual(restored.round, 1)

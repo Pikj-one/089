@@ -18,10 +18,10 @@ def _plain(v):
 
 @dataclass
 class TaskSpec:
-    id: str; title: str; description: str; priority: int = 1; required_output: str = "结构化发现与证据"; relevant_context: str = ""
+    id: str; title: str; description: str; required_output: str = "结构化发现与证据"; relevant_context: str = ""
     def to_dict(self): return _plain(self)
     @classmethod
-    def from_dict(cls, d): return cls(**{k:d[k] for k in ("id","title","description")}, priority=d.get("priority",1), required_output=d.get("required_output","结构化发现与证据"), relevant_context=d.get("relevant_context",""))
+    def from_dict(cls, d): return cls(**{k:d[k] for k in ("id","title","description")}, required_output=d.get("required_output","结构化发现与证据"), relevant_context=d.get("relevant_context",""))
 
 @dataclass
 class Plan:

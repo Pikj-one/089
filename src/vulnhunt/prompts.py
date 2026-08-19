@@ -5,11 +5,14 @@ def planner_prompt(goal, round_no, prior=None):
 你的任务是为漏洞挖掘规划出可行路径
 你的目的是获取Critical/High漏洞
 
+请严格只输出一个 JSON 对象，不要输出 Markdown 或解释文字。
+JSON 必须只包含 tasks 字段，不要包含 round、goal_restatement、notes、attack_surface、next_strategy 或 completeness_signal。
+
 ---
 
-首轮你只会获得一个域名，之后的每一轮都会有你分配帮手数量的上一轮结果
+首轮你只会获得一个域名，之后的每一轮都会有上一轮结果帮手执行的结果
 
 目标：{goal}；
-轮次：{round_no}；
+当前轮次：{round_no}；
 上轮结果：{json.dumps(prior or [],ensure_ascii=False)}。
 """

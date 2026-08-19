@@ -1,4 +1,4 @@
-from .models import RunStatus, CompletenessSignal
+from .models import RunStatus
 from .workers import WorkerPool
 from .state import now
 import threading
@@ -25,12 +25,12 @@ class Orchestrator:
         if self._abort.is_set(): self.run.status=RunStatus.ABORTED; self.save(); return
         if self.run.status==RunStatus.INIT: self.run.current_round=1; self.run.status=RunStatus.PLANNING
         elif self.run.status==RunStatus.PLANNING:
-            self.plan=self.claude.plan(self.run.goal,self.run.current_round,self.prior,self.store.root); self.store.save_plan(self.run.current_round,self.plan); self.run.status=RunStatus.DISPATCHING
+            self.plan=self.claude.plan(self.run.goal,self.run.current_round,self.prior,self.store.root.resolve()); self.plan.round=self.run.current_round; self.store.save_plan(self.run.current_round,self.plan); self.run.status=RunStatus.DISPATCHING
         elif self.run.status==RunStatus.DISPATCHING: self.run.status=RunStatus.RUNNING
         elif self.run.status==RunStatus.RUNNING:
-            self.prior.extend([r.to_dict() for r in WorkerPool(self.config,self.codex,self.store).run(self.plan.tasks,self.run.current_round)]); self.run.status=RunStatus.COLLECTING
+            self.prior=[r.to_dict() for r in WorkerPool(self.config,self.codex,self.store).run(self.plan.tasks,self.run.current_round)]; self.run.status=RunStatus.COLLECTING
         elif self.run.status==RunStatus.COLLECTING: self.run.status=RunStatus.DECISION
         elif self.run.status==RunStatus.DECISION:
-            if self.run.current_round>=self.config.max_rounds or getattr(self.plan,'completeness_signal',CompletenessSignal.UNKNOWN)==CompletenessSignal.COMPLETE: self.run.status=RunStatus.COMPLETE
+            if self.run.current_round>=self.config.max_rounds: self.run.status=RunStatus.COMPLETE
             else: self.run.current_round+=1; self.run.status=RunStatus.PLANNING
         self.save(); self.store.save_state({'status':self.run.status.value,'round':self.run.current_round})

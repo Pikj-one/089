@@ -29,7 +29,7 @@ class TUI:
     def log(self, component, message):
         line = f"[{time.strftime('%H:%M:%S')}][{component}] {message}"
         with self._lock:
-            color = self._colors.get(component, "\x1b[37m") if __import__('sys').stdout.isatty() else ""
+            color = self._color_for(component) if __import__('sys').stdout.isatty() else ""
             reset = "\x1b[0m" if color else ""
             print(f"{color}{line}{reset}", flush=True)
         self._transcribe(line)
@@ -40,7 +40,7 @@ class TUI:
             self.log(component, text)
             return
         with self._lock:
-            color = self._colors.get(component, "\x1b[37m")
+            color = self._color_for(component)
             reset = "\x1b[0m" if color else ""
             if self._stream_component != component:
                 if self._stream_component is not None:
@@ -70,6 +70,13 @@ class TUI:
             return
         self._transcribe(f"[{self._stream_start}][{self._stream_component}] {''.join(self._stream_parts)}")
         self._stream_parts = []
+
+    def _color_for(self, component):
+        if component.startswith("CLAUDE"):
+            return self._colors["CLAUDE"]
+        if component.startswith("CODEX"):
+            return self._colors["CODEX"]
+        return self._colors.get(component, "\x1b[37m")
 
     def abort(self):
         self._aborted.set()

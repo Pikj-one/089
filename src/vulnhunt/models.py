@@ -7,7 +7,6 @@ class RunStatus(StrEnum): INIT="INIT"; PLANNING="PLANNING"; DISPATCHING="DISPATC
 class TaskStatus(StrEnum): PENDING="PENDING"; DISPATCHED="DISPATCHED"; RUNNING="RUNNING"; SUCCEEDED="SUCCEEDED"; FAILED="FAILED"; TIMED_OUT="TIMED_OUT"; SKIPPED="SKIPPED"; CANCELLED="CANCELLED"; RECOVERED="RECOVERED"
 class TaskResultStatus(StrEnum): SUCCESS="SUCCESS"; FAILURE="FAILURE"; PARTIAL="PARTIAL"
 class Severity(StrEnum): CRITICAL="CRITICAL"; HIGH="HIGH"; MEDIUM="MEDIUM"; LOW="LOW"; INFO="INFO"
-class CompletenessSignal(StrEnum): COMPLETE="COMPLETE"; CONTINUE="CONTINUE"; UNKNOWN="UNKNOWN"
 class CompletionDecision(StrEnum): COMPLETE="COMPLETE"; CONTINUE="CONTINUE"; ABORT="ABORT"; MAX_ROUNDS="MAX_ROUNDS"; STALLED="STALLED"
 
 def _plain(v):
@@ -26,10 +25,10 @@ class TaskSpec:
 
 @dataclass
 class Plan:
-    round: int; goal_restatement: str; attack_surface: list[str]; tasks: list[TaskSpec]; notes: str = ""; completeness_signal: CompletenessSignal = CompletenessSignal.UNKNOWN; next_strategy: str = ""
+    round: int; tasks: list[TaskSpec]
     def to_dict(self): return _plain(self)
     @classmethod
-    def from_dict(cls,d): return cls(d["round"],d.get("goal_restatement",""),d.get("attack_surface",[]),[TaskSpec.from_dict(x) for x in d.get("tasks",[])],d.get("notes",""),CompletenessSignal(d.get("completeness_signal","UNKNOWN")),d.get("next_strategy",""))
+    def from_dict(cls,d): return cls(d.get("round",0),[TaskSpec.from_dict(x) for x in d.get("tasks",[])])
 
 @dataclass
 class WorkerResult:

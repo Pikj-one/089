@@ -1,4 +1,4 @@
-runs_root = "runs"
+runs_root = "../vulnhunt-runs"
 target_dir = "."
 max_rounds = 50
 max_workers = 10

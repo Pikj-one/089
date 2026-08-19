@@ -10,7 +10,7 @@ Claude Code 适合理解目标并拆分审计面，Codex CLI 适合在自身 san
 用户目标
   -> Claude 生成 Plan
   -> WorkerPool 并发派发 Codex 任务
-  -> 结果写入 runs/<run_id>/tasks/
+  -> 结果写入 ../vulnhunt-runs/<run_id>/tasks/
   -> 下一轮 Planner 获取历史结果
   -> 生成 report/report.{md,json}
 ```
@@ -19,7 +19,7 @@ Claude Code 适合理解目标并拆分审计面，Codex CLI 适合在自身 san
 
 `RunStore` 使用临时文件加 `os.replace` 写入 JSON，避免进程中断时直接覆盖正式文件。任务结果按 task id 独立落盘，worker 不共享写入 `state.json`；状态快照由 Orchestrator 更新。
 
-`runs/` 是运行时证据，不进入 Git。需要复盘时保留完整的 `run.json`、`state.json`、计划、任务结果和报告。
+`../vulnhunt-runs/` 是项目目录外的运行时证据，不进入 Git。需要复盘时保留完整的 `run.json`、`state.json`、计划、任务结果和报告。
 
 ## CLI 联调
 

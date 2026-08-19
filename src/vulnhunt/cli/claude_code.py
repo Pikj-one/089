@@ -10,7 +10,7 @@ class ClaudeWrapper:
     def plan(self,goal,round_no,prior,work_dir):
         work_dir=Path(work_dir).resolve()
         target_dir=Path(self.config.target_dir).resolve()
-        self.session_id=self.session_id or str(uuid.uuid4()); args=[resolve_executable([self.config.claude_exec]),'-p','', '--output-format','stream-json','--include-partial-messages','--verbose','--permission-mode','plan','--add-dir',str(target_dir),'--session-id',self.session_id]
+        self.session_id=self.session_id or str(uuid.uuid4()); args=[resolve_executable([self.config.claude_exec]),'-p','', '--output-format','stream-json','--include-partial-messages','--verbose','--permission-mode','bypassPermissions','--add-dir',str(target_dir),'--session-id',self.session_id]
         def on_line(line):
             if self.store: self.store.append_log(f'claude_round_{round_no:03d}.jsonl', line)
             try: ev=json.loads(line)

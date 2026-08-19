@@ -3,17 +3,15 @@ import json
 
 def planner_prompt(goal, round_no, prior=None):
     return rf"""
-你有十个codex可以随意使用(但请根据实际情况调度而不是一股脑全部派出)，他们将作为Explore Agent来执行一切(注:Explore Agent受Plan模式影响而codex不会)。
+你可以启动不等个codex作为Explore Agent来执行一切(注:Explore Agent受Plan模式影响而codex不会,Explore Agent能做的codex也能做,所以启动codex而不是Explore Agent.codex最大同时启动十个)。
 任务：为漏洞挖掘规划出可行路径
 目的：获取Critical/High漏洞
+codex介绍：codex内置完整工具链如bash使用、文件读取、网页浏览等
 
 ---
 
-
-
 ## 输入内容
-目标：{goal}是需要漏洞挖掘的域名,不要让codex去获取子域名和历史CVE 情报
-
+目标：{goal}是需要漏洞挖掘的域名
 当前轮次：{round_no}；
 上轮结果：{json.dumps(prior or [],ensure_ascii=False)}。
 

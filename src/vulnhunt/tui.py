@@ -10,16 +10,66 @@ class TUI:
     def __init__(self):
         self._lock = threading.Lock()
         self._aborted = threading.Event()
+        self._stream_component = None
+        self._stream_parts = []
+        self._stream_start = ""
+        self._transcript = Path(__file__).resolve().parents[2] / "tui.log.txt"
         self.store = None
         self.thread = None
         self.orchestrator = None
-        self._colors = {"UI": "\x1b[90m", "CLAUDE": "\x1b[94m", "CODEX": "\x1b[93m", "ORCH": "\x1b[96m", "ERROR": "\x1b[91m"}
+        self._colors = {"UI": "\x1b[90m", "THINK": "\x1b[90m", "CLAUDE": "\x1b[94m", "CODEX": "\x1b[93m", "ORCH": "\x1b[96m", "ERROR": "\x1b[91m"}
+
+    def _transcribe(self, line):
+        try:
+            with self._transcript.open("a", encoding="utf-8") as f:
+                f.write(line + "\n")
+        except OSError:
+            pass
 
     def log(self, component, message):
+        line = f"[{time.strftime('%H:%M:%S')}][{component}] {message}"
         with self._lock:
             color = self._colors.get(component, "\x1b[37m") if __import__('sys').stdout.isatty() else ""
             reset = "\x1b[0m" if color else ""
-            print(f"{color}[{time.strftime('%H:%M:%S')}][{component}]{reset} {message}", flush=True)
+            print(f"{color}{line}{reset}", flush=True)
+        self._transcribe(line)
+
+    def stream(self, component, text):
+        """Append streamed text for a component on the current line."""
+        if not sys.stdout.isatty():
+            self.log(component, text)
+            return
+        with self._lock:
+            color = self._colors.get(component, "\x1b[37m")
+            reset = "\x1b[0m" if color else ""
+            if self._stream_component != component:
+                if self._stream_component is not None:
+                    sys.stdout.write("\n")
+                    self._flush_stream_line()
+                sys.stdout.write(f"{color}[{time.strftime('%H:%M:%S')}][{component}]{reset} ")
+                self._stream_component = component
+                self._stream_start = time.strftime('%H:%M:%S')
+                self._stream_parts = []
+            sys.stdout.write(text)
+            self._stream_parts.append(text)
+            sys.stdout.flush()
+
+    def stream_end(self):
+        """Finish the current streaming line."""
+        if not sys.stdout.isatty():
+            return
+        with self._lock:
+            if self._stream_component is not None:
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+                self._flush_stream_line()
+                self._stream_component = None
+
+    def _flush_stream_line(self):
+        if self._stream_component is None:
+            return
+        self._transcribe(f"[{self._stream_start}][{self._stream_component}] {''.join(self._stream_parts)}")
+        self._stream_parts = []
 
     def abort(self):
         self._aborted.set()
@@ -32,6 +82,12 @@ class TUI:
 
     def attach(self, store, thread, orchestrator=None):
         self.store, self.thread, self.orchestrator = store, thread, orchestrator
+        self._transcribe(f"==== TUI 运行开始 {time.strftime('%Y-%m-%d %H:%M:%S')} ====")
+        try:
+            goal = self.store.read_run().goal
+            self._transcribe(f"[UI] 目标：{goal}")
+        except Exception:
+            pass
 
     def command_loop(self):
         """Run the MVP command loop. Commands are intentionally line-oriented."""

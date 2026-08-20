@@ -16,6 +16,33 @@ class WrapperUnitTests(unittest.TestCase):
             plan = ClaudeWrapper(Config()).plan("audit", 1, [], ".")
         self.assertEqual(plan.tasks[0].id, "task_1")
 
+    def test_claude_wrapper_captures_plan_subagent_type(self):
+        output = json.dumps({"type": "result", "result": json.dumps({"tasks": []})})
+        events = [json.dumps({
+            "type": "stream_event",
+            "event": {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {"type": "tool_use", "id": "tool_plan", "name": "Task", "input": {"subagent_type": "Plan"}},
+            },
+        }), json.dumps({
+            "type": "stream_event",
+            "event": {"type": "content_block_delta", "index": 1, "delta": {"type": "text_delta", "text": "Plan output"}},
+            "parent_tool_use_id": "tool_plan",
+            "subagent_type": "Plan",
+        })]
+
+        def fake_process(args, **kwargs):
+            for event in events:
+                kwargs["on_stdout_line"](event)
+            return ProcResult(0, output, "")
+
+        logs = []
+        with patch("vulnhunt.cli.claude_code.run_process", side_effect=fake_process):
+            ClaudeWrapper(Config(), logger=lambda component, message: logs.append((component, message))).plan("audit", 1, [], ".")
+        self.assertIn(("CLAUDE-PLAN", "subagent_type=Plan"), logs)
+        self.assertIn(("CLAUDE-PLAN", "Plan output"), logs)
+
     def test_codex_wrapper_parses_result_file(self):
         def fake_process(args, cwd=None, **kwargs):
             output_file = Path(args[args.index("-o") + 1])

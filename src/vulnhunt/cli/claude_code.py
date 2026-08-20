@@ -66,14 +66,15 @@ class ClaudeWrapper:
                 subtype=event.get('subtype')
                 task_id=event.get('task_id') or ''
                 description=event.get('description') or ''
+                kind='子代理' if event.get('task_type') == 'local_agent' else '后台任务'
                 if subtype == 'task_started':
-                    self.stream_end(); self.logger('CLAUDE-PLAN', f'子代理启动：{description}')
+                    self.stream_end(); self.logger('CLAUDE-PLAN', f'{kind}启动：{description}')
                     if task_id: progress_logged[task_id]=description
                 elif subtype == 'task_progress' and description and progress_logged.get(task_id) != description:
                     progress_logged[task_id]=description
                     self.stream_end(); self.logger('CLAUDE-PLAN', f'正在执行：{description}')
                 elif subtype == 'task_notification':
-                    self.stream_end(); self.logger('CLAUDE-PLAN', f"子代理结束（{event.get('status') or '?'}）：{event.get('summary') or ''}")
+                    self.stream_end(); self.logger('CLAUDE-PLAN', f"{kind}结束（{event.get('status') or '?'}）：{event.get('summary') or ''}")
                 elif subtype == 'background_tasks_changed':
                     for background_task in event.get('tasks') or []:
                         tdesc=background_task.get('description') or ''

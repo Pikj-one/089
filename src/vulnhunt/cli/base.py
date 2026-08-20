@@ -7,6 +7,23 @@ def resolve_executable(candidates):
     for c in candidates:
         if Path(c).exists(): return str(c)
     return candidates[0] if candidates else ""
+def _kill_process(p):
+    """强制结束子进程，兼容 Windows(taskkill) 与 POSIX(terminate/kill)。"""
+    if os.name == 'nt':
+        subprocess.run(['taskkill','/pid',str(p.pid),'/T','/F'],capture_output=True)
+    else:
+        try:
+            p.terminate()
+        except OSError:
+            pass
+    try:
+        p.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        try:
+            p.kill()
+        except OSError:
+            pass
+        p.wait(timeout=5)
 def run_process(args,cwd=None,env=None,timeout_s=60,input_text="",on_stdout_line=None,cancel_event=None):
     start=time.monotonic(); out=[]; err=[]
     try:
@@ -23,10 +40,10 @@ def run_process(args,cwd=None,env=None,timeout_s=60,input_text="",on_stdout_line
         deadline=time.monotonic()+timeout_s
         while p.poll() is None and time.monotonic() < deadline:
             if cancel_event is not None and cancel_event.is_set():
-                subprocess.run(['taskkill','/pid',str(p.pid),'/T','/F'],capture_output=True); p.wait(); return ProcResult(-2,''.join(out),''.join(err),False,time.monotonic()-start)
+                _kill_process(p); return ProcResult(-2,''.join(out),''.join(err),False,time.monotonic()-start)
             time.sleep(0.05)
         if p.poll() is None:
-            subprocess.run(['taskkill','/pid',str(p.pid),'/T','/F'],capture_output=True); p.wait(); timed_out=True
+            _kill_process(p); timed_out=True
         else:
             timed_out=False
         [t.join(timeout=2) for t in ts]

@@ -47,7 +47,7 @@ class WrapperUnitTests(unittest.TestCase):
         output = json.dumps({"type": "result", "result": json.dumps({"tasks": []})})
         events = [json.dumps({
             "type": "system", "subtype": "task_started",
-            "task_id": "t1", "description": "规划攻击路径", "subagent_type": "Plan",
+            "task_id": "t1", "description": "规划攻击路径", "task_type": "local_agent",
         }), json.dumps({
             "type": "system", "subtype": "task_progress",
             "task_id": "t1", "description": "Running Fetch homepage headers", "last_tool_name": "Bash",
@@ -56,7 +56,13 @@ class WrapperUnitTests(unittest.TestCase):
             "task_id": "t1", "description": "Running Fetch homepage headers", "last_tool_name": "Bash",
         }), json.dumps({
             "type": "system", "subtype": "task_notification",
-            "task_id": "t1", "status": "completed", "summary": "Extract signing logic",
+            "task_id": "t1", "status": "completed", "summary": "Extract signing logic", "task_type": "local_agent",
+        }), json.dumps({
+            "type": "system", "subtype": "task_started",
+            "task_id": "t2", "description": "Probe API prefixes", "task_type": "local_bash",
+        }), json.dumps({
+            "type": "system", "subtype": "task_notification",
+            "task_id": "t2", "status": "completed", "summary": "Probe API prefixes", "task_type": "local_bash",
         })]
 
         def fake_process(args, **kwargs):
@@ -70,6 +76,8 @@ class WrapperUnitTests(unittest.TestCase):
         self.assertIn(("CLAUDE-PLAN", "子代理启动：规划攻击路径"), logs)
         self.assertEqual(1, logs.count(("CLAUDE-PLAN", "正在执行：Running Fetch homepage headers")))
         self.assertIn(("CLAUDE-PLAN", "子代理结束（completed）：Extract signing logic"), logs)
+        self.assertIn(("CLAUDE-PLAN", "后台任务启动：Probe API prefixes"), logs)
+        self.assertIn(("CLAUDE-PLAN", "后台任务结束（completed）：Probe API prefixes"), logs)
 
     def test_codex_wrapper_parses_result_file(self):
         def fake_process(args, cwd=None, **kwargs):

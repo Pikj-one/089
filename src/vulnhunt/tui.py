@@ -14,6 +14,7 @@ class TUI:
         self._stream_parts = []
         self._stream_start = ""
         self._transcript = Path(__file__).resolve().parents[2] / "tui.log.txt"
+        self._last_activity = time.monotonic()
         self.store = None
         self.thread = None
         self.orchestrator = None
@@ -27,6 +28,7 @@ class TUI:
             pass
 
     def log(self, component, message):
+        self._last_activity = time.monotonic()
         line = f"[{time.strftime('%H:%M:%S')}][{component}] {message}"
         with self._lock:
             color = self._color_for(component) if __import__('sys').stdout.isatty() else ""
@@ -36,6 +38,7 @@ class TUI:
 
     def stream(self, component, text):
         """Append streamed text for a component on the current line."""
+        self._last_activity = time.monotonic()
         if not sys.stdout.isatty():
             self.log(component, text)
             return
@@ -56,6 +59,7 @@ class TUI:
 
     def stream_end(self):
         """Finish the current streaming line."""
+        self._last_activity = time.monotonic()
         if not sys.stdout.isatty():
             return
         with self._lock:
@@ -96,8 +100,17 @@ class TUI:
         except Exception:
             pass
 
+    def _heartbeat(self):
+        """子代理长时间无输出时输出心跳行，避免界面看起来像卡死。"""
+        while self.thread is not None and self.thread.is_alive():
+            if time.monotonic() - self._last_activity >= 20:
+                self.log("UI", "仍在运行，等待模型输出…")
+            time.sleep(2)
+
     def command_loop(self):
         """Run the MVP command loop. Commands are intentionally line-oriented."""
+        if self.thread is not None:
+            threading.Thread(target=self._heartbeat, daemon=True).start()
         commands = queue.Queue()
         def read_commands():
             while True:

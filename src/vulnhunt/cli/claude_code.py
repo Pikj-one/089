@@ -15,6 +15,7 @@ class ClaudeWrapper:
         tool_ids_by_index={}
         plan_tool_ids=set()
         plan_subagent_logged=False
+        progress_logged={}
 
         def capture_plan_subagent(value):
             nonlocal plan_subagent_logged
@@ -22,6 +23,7 @@ class ClaudeWrapper:
                 return False
             if value.get('subagent_type') == 'Plan':
                 if not plan_subagent_logged:
+                    self.stream_end()
                     self.logger('CLAUDE-PLAN', 'subagent_type=Plan')
                     plan_subagent_logged=True
                 return True
@@ -60,6 +62,25 @@ class ClaudeWrapper:
             remember_plan_tool(ev.get('message', {}))
             capture_plan_subagent(ev)
             etype=event.get('type')
+            if etype == 'system':
+                subtype=event.get('subtype')
+                task_id=event.get('task_id') or ''
+                description=event.get('description') or ''
+                if subtype == 'task_started':
+                    self.stream_end(); self.logger('CLAUDE-PLAN', f'子代理启动：{description}')
+                    if task_id: progress_logged[task_id]=description
+                elif subtype == 'task_progress' and description and progress_logged.get(task_id) != description:
+                    progress_logged[task_id]=description
+                    self.stream_end(); self.logger('CLAUDE-PLAN', f'正在执行：{description}')
+                elif subtype == 'task_notification':
+                    self.stream_end(); self.logger('CLAUDE-PLAN', f"子代理结束（{event.get('status') or '?'}）：{event.get('summary') or ''}")
+                elif subtype == 'background_tasks_changed':
+                    for background_task in event.get('tasks') or []:
+                        tdesc=background_task.get('description') or ''
+                        tid=background_task.get('task_id') or ''
+                        if tdesc and progress_logged.get(tid) != tdesc:
+                            progress_logged[tid]=tdesc
+                            self.stream_end(); self.logger('CLAUDE-PLAN', f'后台任务：{tdesc}')
             if etype == 'content_block_delta':
                 delta=event.get('delta') or {}
                 if delta.get('type') == 'input_json_delta':

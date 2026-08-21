@@ -4,6 +4,7 @@ from pathlib import Path
 import json
 import queue
 import sys
+from .logview import AggregateSink, format_line, replay_file
 
 class TUI:
     """Small stdlib console facade; orchestration remains usable without a TTY."""
@@ -18,6 +19,7 @@ class TUI:
         self.store = None
         self.thread = None
         self.orchestrator = None
+        self._finished = False
         self._colors = {"UI": "\x1b[90m", "THINK": "\x1b[90m", "CLAUDE": "\x1b[94m", "CODEX": "\x1b[93m", "ORCH": "\x1b[96m", "ERROR": "\x1b[91m"}
 
     def _transcribe(self, line):
@@ -122,9 +124,10 @@ class TUI:
         reader = threading.Thread(target=read_commands, daemon=True)
         reader.start()
         while True:
-            if self.thread and not self.thread.is_alive() and commands.empty():
+            if self.thread and not self.thread.is_alive() and not self._finished:
+                self._finished = True
                 self._clear_prompt()
-                return
+                self.log("UI", "run finished — commands: status, tasks, findings, logs, claude [round], abort, quit")
             try:
                 command = commands.get(timeout=0.1)
             except queue.Empty:
@@ -137,22 +140,40 @@ class TUI:
             if command is None:
                 self.abort()
                 return
-            if command in ("quit", "exit"):
-                self.abort()
-                self._clear_prompt()
+            if self._handle_command(command):
                 return
-            if command == "abort":
-                self.abort()
-                self.log("UI", "abort requested")
-                return
-            if command == "status":
-                self._show_json("run.json")
-            elif command == "tasks":
-                self._show_files("tasks", "_result.json")
-            elif command == "findings":
-                self._show_files("findings", ".json")
-            elif command:
-                self.log("UI", "commands: status, tasks, findings, abort, quit")
+
+    def _handle_command(self, command):
+        if command in ("quit", "exit"):
+            self.abort(); self._clear_prompt(); return True
+        if command == "abort":
+            self.abort(); self.log("UI", "abort requested"); return False
+        if command == "status": self._show_json("run.json")
+        elif command == "tasks": self._show_files("tasks", "_result.json")
+        elif command == "findings": self._show_files("findings", ".json")
+        elif command == "logs":
+            if not self.store: self.log("UI", "no run started")
+            else:
+                paths = sorted(self.store.logs.glob("claude_round_*.jsonl"))
+                self.log("UI", f"logs: {len(paths)} file(s)")
+                for path in paths: self.log("UI", path.name)
+        elif command.startswith("claude"):
+            if not self.store: self.log("UI", "no run started")
+            else:
+                parts = command.split()
+                round_no = None
+                if len(parts) > 1:
+                    value = parts[1].removeprefix("--round")
+                    try: round_no = int(value)
+                    except ValueError: self.log("UI", "usage: claude [round]"); return False
+                paths = sorted(self.store.logs.glob("claude_round_*.jsonl"))
+                path = next((p for p in paths if round_no is not None and p.name == f"claude_round_{round_no:03d}.jsonl"), paths[-1] if paths and round_no is None else None)
+                if path is None: self.log("UI", "claude log not found")
+                else:
+                    self.log("UI", f"replay {path.name} ({path.stat().st_size} bytes)")
+                    replay_file(path, AggregateSink(self.log))
+        elif command: self.log("UI", "commands: status, tasks, findings, logs, claude [round], abort, quit")
+        return False
 
     def _clear_prompt(self):
         with self._lock:

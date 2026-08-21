@@ -3,9 +3,10 @@ from pathlib import Path
 from .base import run_process, resolve_executable
 from ..models import Plan, TaskSpec
 from ..prompts import planner_prompt
+from ..logview import ClaudeLogRenderer, LogAction, StreamAction, StreamEndAction, is_plan_stream
 class ClaudeWrapper:
     def __init__(self,config,logger=None,store=None,streamer=None,stream_end=None):
-        self.config=config; self.session_id=None; self.logger=logger or (lambda component,message: None); self.cancel_event=None; self.store=store; self.streamer=streamer; self.stream_end=stream_end or (lambda: None)
+        self.config=config; self.session_id=None; self.logger=logger or (lambda component,message: None); self.cancel_event=None; self.store=store; self.streamer=streamer; self.stream_end=stream_end or (lambda: None); self._renderer=ClaudeLogRenderer()
     def health_check(self): return run_process([resolve_executable([self.config.claude_exec]),'--version'],timeout_s=20).exit_code==0
     def plan(self,goal,round_no,prior,work_dir):
         work_dir=Path(work_dir).resolve()
@@ -15,7 +16,11 @@ class ClaudeWrapper:
         tool_ids_by_index={}
         plan_tool_ids=set()
         plan_subagent_logged=False
-        progress_logged={}
+
+        def apply(action):
+            if isinstance(action, LogAction): self.logger(action.component, action.message)
+            elif isinstance(action, StreamAction): self.streamer(action.component, action.text) if self.streamer else self.logger(action.component, action.text)
+            elif isinstance(action, StreamEndAction): self.stream_end()
 
         def capture_plan_subagent(value):
             nonlocal plan_subagent_logged
@@ -62,26 +67,6 @@ class ClaudeWrapper:
             remember_plan_tool(ev.get('message', {}))
             capture_plan_subagent(ev)
             etype=event.get('type')
-            if etype == 'system':
-                subtype=event.get('subtype')
-                task_id=event.get('task_id') or ''
-                description=event.get('description') or ''
-                kind='子代理' if event.get('task_type') == 'local_agent' else '后台任务'
-                if subtype == 'task_started':
-                    self.stream_end(); self.logger('CLAUDE-PLAN', f'{kind}启动：{description}')
-                    if task_id: progress_logged[task_id]=description
-                elif subtype == 'task_progress' and description and progress_logged.get(task_id) != description:
-                    progress_logged[task_id]=description
-                    self.stream_end(); self.logger('CLAUDE-PLAN', f'正在执行：{description}')
-                elif subtype == 'task_notification':
-                    self.stream_end(); self.logger('CLAUDE-PLAN', f"{kind}结束（{event.get('status') or '?'}）：{event.get('summary') or ''}")
-                elif subtype == 'background_tasks_changed':
-                    for background_task in event.get('tasks') or []:
-                        tdesc=background_task.get('description') or ''
-                        tid=background_task.get('task_id') or ''
-                        if tdesc and progress_logged.get(tid) != tdesc:
-                            progress_logged[tid]=tdesc
-                            self.stream_end(); self.logger('CLAUDE-PLAN', f'后台任务：{tdesc}')
             if etype == 'content_block_delta':
                 delta=event.get('delta') or {}
                 if delta.get('type') == 'input_json_delta':
@@ -97,22 +82,8 @@ class ClaudeWrapper:
                                     plan_tool_ids.add(tool_id)
                         except json.JSONDecodeError:
                             pass
-            if etype=='content_block_delta':
-                delta=event.get('delta') or {}
-                dtype=delta.get('type')
-                plan_stream=(
-                    ev.get('subagent_type') == 'Plan'
-                    or event.get('subagent_type') == 'Plan'
-                    or ev.get('parent_tool_use_id') in plan_tool_ids
-                    or event.get('parent_tool_use_id') in plan_tool_ids
-                )
-                if dtype=='thinking_delta' and delta.get('thinking'):
-                    component="CLAUDE-PLAN" if plan_stream else "CLAUDE-THINK"
-                    self.streamer(component, delta['thinking']) if self.streamer else self.logger(component, delta['thinking'])
-                elif dtype=='text_delta' and delta.get('text'):
-                    component="CLAUDE-PLAN" if plan_stream else "CLAUDE"
-                    self.streamer(component, delta['text']) if self.streamer else self.logger(component, delta['text'])
-            elif etype=='content_block_stop': self.stream_end()
+            plan_stream=is_plan_stream(ev, event, plan_tool_ids)
+            for action in self._renderer.feed(ev, plan_stream): apply(action)
         r=run_process(args,cwd=work_dir,input_text=planner_prompt(goal,round_no,prior),timeout_s=self.config.claude_timeout_s,cancel_event=self.cancel_event,on_stdout_line=on_line)
         if r.exit_code: raise RuntimeError(r.stderr or 'claude failed')
         envelopes=[]

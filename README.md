@@ -9,7 +9,8 @@ VulnHunt 是一个纯 Python 标准库实现的漏洞挖掘编排 MVP：Claude C
 - 提供交互式 `tui` 入口，可查看运行状态、任务文件和发现文件
 - Claude/Codex 子进程通过 stdin 接收任务，支持 Windows 超时进程树清理
 - 每次运行保存计划、任务输入、任务结果、状态快照和报告
-- 支持 `start`、`resume`、`doctor` 命令
+- 支持 `start`、`resume`、`doctor`、`log` 命令
+- Claude stream-json 日志支持直播全量渲染，以及 TUI/命令行回放
 
 ## 环境
 
@@ -114,7 +115,14 @@ python -m unittest tests.test_real_cli -v
 python -m vulnhunt tui
 ```
 
-支持 `status`、`tasks`、`findings`、`abort` 和 `quit`。TUI 当前是纯 stdin/stdout 的 MVP，不提供全屏刷新或 ANSI 面板。
+支持 `status`、`tasks`、`findings`、`logs`、`claude [round]`、`abort` 和 `quit`。运行结束后仍可回放 Claude 日志。
+
+也可以直接回放运行目录中最新一轮日志，或指定轮次：
+
+```powershell
+python -m vulnhunt log ../vulnhunt-runs/<年>/<月>/<日>/<时>-<分>/<run_id>
+python -m vulnhunt log ../vulnhunt-runs/<年>/<月>/<日>/<时>-<分>/<run_id> --round 1
+```
 
 ## 设计说明
 

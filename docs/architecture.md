@@ -54,6 +54,8 @@ Windows 下优先配置 native `.exe`。超时处理依赖 `taskkill /T /F` 清�
 
 Codex 的最终结果文件是任务 workspace 下的 `_last_message.json`；事件流只用于过程输出。这样可以避免依赖 JSONL 事件顺序。报告由落盘结果重新聚合生成，重启后仍可依据文件恢复审计证据。
 
+Claude 的 stream-json 日志由 `logview` 统一渲染，直播和 `vulnhunt log` 回放共用同一套事件映射；高频碎片会聚合，长工具结果会截断并保留截断标记。
+
 ## 版本与提交
 
 项目采用 SemVer。提交信息使用 Conventional Commits，例如：

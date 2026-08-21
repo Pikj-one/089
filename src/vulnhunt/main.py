@@ -1,4 +1,4 @@
-import argparse, uuid
+import argparse, sys, uuid
 from datetime import datetime, timezone
 from .config import load_config
 from .models import Run
@@ -8,9 +8,19 @@ from .cli.codex import CodexWrapper
 from .orchestrator import Orchestrator
 from .report import build_report
 from .tui import TUI
+from .logview import AggregateSink, format_line, replay_file
 def main(argv=None):
-    p=argparse.ArgumentParser(prog='vulnhunt'); sub=p.add_subparsers(dest='cmd',required=True); s=sub.add_parser('start'); s.add_argument('goal'); s.add_argument('--config',default='config.toml'); t=sub.add_parser('tui'); t.add_argument('--config',default='config.toml'); sub.add_parser('doctor'); r=sub.add_parser('resume'); r.add_argument('run_dir')
+    p=argparse.ArgumentParser(prog='vulnhunt'); sub=p.add_subparsers(dest='cmd',required=True); s=sub.add_parser('start'); s.add_argument('goal'); s.add_argument('--config',default='config.toml'); t=sub.add_parser('tui'); t.add_argument('--config',default='config.toml'); sub.add_parser('doctor'); r=sub.add_parser('resume'); r.add_argument('run_dir'); log=sub.add_parser('log'); log.add_argument('run_dir'); log.add_argument('--round',type=int)
     a=p.parse_args(argv)
+    if a.cmd == 'log':
+        if hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        store=RunStore(a.run_dir)
+        paths=sorted(store.logs.glob('claude_round_*.jsonl'))
+        path=next((x for x in paths if x.name == f'claude_round_{a.round:03d}.jsonl'), paths[-1] if paths and a.round is None else None)
+        if path is None: raise SystemExit('Claude log not found')
+        replay_file(path, AggregateSink(lambda component, message: print(format_line(component, message))))
+        return
     if a.cmd == 'tui':
         tui=TUI(); tui.log('UI', 'enter a goal to start, or type quit')
         try: goal=input('goal> ').strip()

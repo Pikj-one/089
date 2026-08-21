@@ -18,10 +18,15 @@ class LogViewTests(unittest.TestCase):
         renderer.feed({"type": "stream_event", "event": {"type": "content_block_start", "index": 0, "content_block": {"type": "tool_use", "id": "tool", "name": "Bash"}}})
         renderer.feed({"type": "stream_event", "event": {"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": '{"command":"ls"}'}}})
         actions = renderer.feed({"type": "stream_event", "event": {"type": "content_block_stop", "index": 0}})
-        self.assertEqual(actions[0].message, 'tool: Bash {"command": "ls"}')
+        self.assertEqual(actions[0].message, "tool: Bash ls")
         result = renderer.feed({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "tool", "is_error": True, "content": "x" * 2500}]}})
-        self.assertIn("[ERROR]", result[0].message)
-        self.assertIn("truncated", result[0].message)
+        self.assertEqual(result, [])
+
+    def test_system_and_plan_components(self):
+        renderer = ClaudeLogRenderer()
+        self.assertEqual(renderer.feed({"type": "system", "subtype": "hook_started", "hook_name": "x"})[0].component, "CLAUDE-SYSTEM")
+        self.assertEqual(renderer.feed({"type": "system", "subtype": "init"})[0].component, "CLAUDE-PLAN-SYSTEM")
+        self.assertEqual(renderer.feed({"type": "stream_event", "event": {"type": "content_block_delta", "delta": {"type": "thinking_delta", "thinking": "plan"}}}, True)[0].component, "CLAUDE-PLAN-THINK")
 
     def test_stream_and_replay_sink(self):
         renderer = ClaudeLogRenderer()

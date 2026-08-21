@@ -60,6 +60,16 @@ def _content_text(value):
     return json.dumps(value, ensure_ascii=False, default=str)
 
 
+def _tool_summary(name, raw_input):
+    data = raw_input if isinstance(raw_input, dict) else {}
+    command = data.get("command") or data.get("cmd") or data.get("commands")
+    if isinstance(command, list):
+        command = ", ".join(str(item) for item in command)
+    if not command:
+        command = data.get("description") or data.get("prompt") or data.get("query") or ""
+    return f"tool: {name}{(' ' + str(command)) if command else ''}"
+
+
 class ClaudeLogRenderer:
     def __init__(self):
         self._progress_logged = {}
@@ -75,9 +85,9 @@ class ClaudeLogRenderer:
         if etype == "system":
             subtype = event.get("subtype")
             if subtype == "init":
-                actions.append(LogAction("CLAUDE-PLAN", f"session: model={event.get('model','')} v={event.get('claude_code_version','')} {event.get('permissionMode','')} tools={len(event.get('tools') or [])}"))
+                actions.append(LogAction("CLAUDE-PLAN-SYSTEM", f"session: model={event.get('model','')} v={event.get('claude_code_version','')} {event.get('permissionMode','')} tools={len(event.get('tools') or [])}"))
             elif subtype == "status":
-                actions.append(LogAction("CLAUDE-PLAN", f"status: {event.get('status') or event.get('message') or ''}"))
+                actions.append(LogAction("CLAUDE-PLAN-SYSTEM", f"status: {event.get('status') or event.get('message') or ''}"))
             elif subtype == "task_started":
                 kind = "子代理" if event.get("task_type") == "local_agent" else "后台任务"
                 desc = event.get("description") or ""
@@ -99,7 +109,8 @@ class ClaudeLogRenderer:
                         self._progress_logged[tid] = desc
                         actions.append(LogAction("CLAUDE-PLAN", f"后台任务：{desc}"))
             elif subtype not in ("thinking_tokens",):
-                actions.append(LogAction("CLAUDE", f"{subtype or 'system'}: {truncate(json.dumps(event, ensure_ascii=False), TEXT_TRUNC)}"))
+                component = "CLAUDE-SYSTEM" if subtype in ("hook_started", "hook_response") else "CLAUDE-PLAN-SYSTEM"
+                actions.append(LogAction(component, f"{subtype or 'system'}: {truncate(json.dumps(event, ensure_ascii=False), TEXT_TRUNC)}"))
             return actions
         if etype == "stream_event":
             return actions
@@ -115,7 +126,7 @@ class ClaudeLogRenderer:
         elif etype == "content_block_delta":
             delta = event.get("delta") or {}
             dtype = delta.get("type")
-            component = "CLAUDE-PLAN" if plan_stream else ("CLAUDE-THINK" if dtype == "thinking_delta" else "CLAUDE")
+            component = "CLAUDE-PLAN-THINK" if plan_stream and dtype == "thinking_delta" else ("CLAUDE-THINK" if dtype == "thinking_delta" else ("CLAUDE-PLAN" if plan_stream else "CLAUDE"))
             if dtype == "thinking_delta" and delta.get("thinking"):
                 actions.append(StreamAction(component, truncate(delta["thinking"], THINK_TRUNC)))
             elif dtype == "text_delta" and delta.get("text"):
@@ -133,7 +144,10 @@ class ClaudeLogRenderer:
                     raw = json.dumps(json.loads(raw), ensure_ascii=False)
                 except json.JSONDecodeError:
                     raw = truncate(raw, TOOL_INPUT_TRUNC)
-                actions.append(LogAction("CLAUDE-TOOL", f"tool: {block.get('name','')} {raw}"))
+                component = "CLAUDE-PLAN-TOOL" if plan_stream else "CLAUDE-TOOL"
+                try: tool_input = json.loads(raw)
+                except (json.JSONDecodeError, TypeError): tool_input = {}
+                actions.append(LogAction(component, _tool_summary(block.get('name', ''), tool_input)))
             else:
                 actions.append(StreamEndAction())
         elif etype == "message_delta":
@@ -148,22 +162,25 @@ class ClaudeLogRenderer:
             for block in (ev.get("message") or {}).get("content") or []:
                 kind = block.get("type")
                 component = "CLAUDE-PLAN" if is_plan else "CLAUDE"
-                if kind == "thinking": actions.append(LogAction(component, f"思考：{truncate(block.get('thinking',''), THINK_TRUNC)}"))
+                if kind == "thinking": actions.append(LogAction("CLAUDE-PLAN-THINK" if is_plan else "CLAUDE-THINK", f"思考：{truncate(block.get('thinking',''), THINK_TRUNC)}"))
                 elif kind == "text": actions.append(LogAction(component, truncate(block.get("text", ""), TEXT_TRUNC)))
-                elif kind == "tool_use": actions.append(LogAction(component, f"tool: {block.get('name','')} {truncate(json.dumps(block.get('input',{}), ensure_ascii=False), TOOL_INPUT_TRUNC)}"))
+                elif kind == "tool_use": actions.append(LogAction("CLAUDE-PLAN-TOOL" if is_plan else "CLAUDE-TOOL", _tool_summary(block.get('name', ''), block.get('input', {}))))
         elif etype == "user":
             for block in (ev.get("message") or {}).get("content") or []:
                 if block.get("type") == "tool_result":
-                    content = block.get("content", ev.get("tool_use_result", ""))
-                    error = " [ERROR]" if block.get("is_error") else ""
-                    component = "CLAUDE-PLAN" if plan_stream else "CLAUDE-TOOL"
-                    actions.append(LogAction(component, f"result {str(block.get('tool_use_id',''))[:12]}{error}: {truncate(_content_text(content), TOOL_RESULT_TRUNC, TOOL_RESULT_LINES)}"))
+                    continue
                 elif block.get("type") == "text":
                     actions.append(LogAction("CLAUDE", f"[user text] {truncate(block.get('text',''), TEXT_TRUNC)}"))
         elif etype == "result":
-            actions.extend([LogAction("ORCH", f"round done: {ev.get('subtype','')} is_error={ev.get('is_error',False)} turns={ev.get('num_turns','')} dur={ev.get('duration_ms','')} cost=${ev.get('total_cost_usd','')}"), LogAction("CLAUDE", f"final({ev.get('stop_reason','')}): {truncate(_content_text(ev.get('result','')), RESULT_TRUNC)}"), LogAction("CLAUDE", f"usage: in={(ev.get('usage') or {}).get('input_tokens','')} out={(ev.get('usage') or {}).get('output_tokens','')} thinking={(ev.get('usage') or {}).get('thinking_tokens','')} cache_w={(ev.get('usage') or {}).get('cache_creation_input_tokens','')} cache_r={(ev.get('usage') or {}).get('cache_read_input_tokens','')}")])
+            result_text = _content_text(ev.get("result", ""))
+            try: parsed_result = json.loads(result_text)
+            except (TypeError, json.JSONDecodeError): parsed_result = None
+            if isinstance(parsed_result, dict) and isinstance(parsed_result.get("tasks"), list):
+                actions.append(LogAction("ORCH", f"round done: plan tasks={len(parsed_result['tasks'])} is_error={ev.get('is_error', False)} dur={ev.get('duration_ms', '')} cost=${ev.get('total_cost_usd', '')}"))
+            actions.extend([LogAction("CLAUDE", f"final({ev.get('stop_reason','')}): {truncate(result_text, RESULT_TRUNC)}"), LogAction("CLAUDE", f"usage: in={(ev.get('usage') or {}).get('input_tokens','')} out={(ev.get('usage') or {}).get('output_tokens','')} thinking={(ev.get('usage') or {}).get('thinking_tokens','')} cache_w={(ev.get('usage') or {}).get('cache_creation_input_tokens','')} cache_r={(ev.get('usage') or {}).get('cache_read_input_tokens','')}")])
         elif etype:
-            actions.append(LogAction("CLAUDE", f"{etype}: {truncate(json.dumps(ev, ensure_ascii=False), TEXT_TRUNC)}"))
+            component = "CLAUDE-SYSTEM" if etype in ("hook_started", "hook_response") else "CLAUDE"
+            actions.append(LogAction(component, f"{etype}: {truncate(json.dumps(ev, ensure_ascii=False), TEXT_TRUNC)}"))
         return actions
 
 
@@ -197,6 +214,14 @@ def replay_file(path: str | Path, sink: AggregateSink, plan_tool_ids: Iterable[s
         for line in source:
             try: ev = json.loads(line)
             except json.JSONDecodeError: continue
+            def collect_plan_tools(value):
+                if isinstance(value, dict):
+                    if value.get("type") == "tool_use" and value.get("input", {}).get("subagent_type") == "Plan" and value.get("id"):
+                        ids.add(value["id"])
+                    for child in value.values(): collect_plan_tools(child)
+                elif isinstance(value, list):
+                    for child in value: collect_plan_tools(child)
+            collect_plan_tools(ev)
             event = ev.get("event") if isinstance(ev.get("event"), dict) else ev
             plan = is_plan_stream(ev, event, ids)
             for action in renderer.feed(ev, plan):

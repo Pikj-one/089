@@ -20,7 +20,7 @@ class TUI:
         self.thread = None
         self.orchestrator = None
         self._finished = False
-        self._colors = {"UI": "\x1b[90m", "THINK": "\x1b[90m", "CLAUDE": "\x1b[94m", "CODEX": "\x1b[93m", "ORCH": "\x1b[96m", "ERROR": "\x1b[91m"}
+        self._colors = {"UI": "\x1b[90m", "THINK": "\x1b[90m", "CLAUDE": "\x1b[94m", "CLAUDE-PLAN-SYSTEM": "\x1b[95m", "CLAUDE-PLAN-TOOL": "\x1b[93m", "CLAUDE-PLAN-THINK": "\x1b[96m", "CODEX": "\x1b[93m", "ORCH": "\x1b[96m", "ERROR": "\x1b[91m"}
 
     def _transcribe(self, line):
         try:
@@ -78,6 +78,8 @@ class TUI:
         self._stream_parts = []
 
     def _color_for(self, component):
+        if component in self._colors:
+            return self._colors[component]
         if component.startswith("CLAUDE"):
             return self._colors["CLAUDE"]
         if component.startswith("CODEX"):

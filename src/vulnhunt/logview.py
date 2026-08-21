@@ -98,7 +98,8 @@ class ClaudeLogRenderer:
                 task_id, desc = event.get("task_id") or "", event.get("description") or ""
                 if desc and self._progress_logged.get(task_id) != desc:
                     self._progress_logged[task_id] = desc
-                    actions.append(LogAction("CLAUDE-PLAN", f"正在执行：{desc}"))
+                    # Progress is intentionally retained only for de-duplication;
+                    # the high-frequency status rows are not useful in the UI.
             elif subtype == "task_notification":
                 kind = "子代理" if event.get("task_type") == "local_agent" else "后台任务"
                 actions.append(LogAction("CLAUDE-PLAN", f"{kind}结束（{event.get('status') or '?'}）：{event.get('summary') or ''}"))

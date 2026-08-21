@@ -10,7 +10,7 @@ class LogViewTests(unittest.TestCase):
         renderer = ClaudeLogRenderer()
         self.assertEqual(renderer.feed({"type": "system", "subtype": "thinking_tokens"}), [])
         event = {"type": "system", "subtype": "task_progress", "task_id": "t", "description": "same"}
-        self.assertEqual(renderer.feed(event), [LogAction("CLAUDE-PLAN", "正在执行：same")])
+        self.assertEqual(renderer.feed(event), [])
         self.assertEqual(renderer.feed(event), [])
 
     def test_tool_input_is_assembled_and_result_is_truncated(self):
@@ -27,6 +27,7 @@ class LogViewTests(unittest.TestCase):
         self.assertEqual(renderer.feed({"type": "system", "subtype": "hook_started", "hook_name": "x"})[0].component, "CLAUDE-SYSTEM")
         self.assertEqual(renderer.feed({"type": "system", "subtype": "init"})[0].component, "CLAUDE-PLAN-SYSTEM")
         self.assertEqual(renderer.feed({"type": "stream_event", "event": {"type": "content_block_delta", "delta": {"type": "thinking_delta", "thinking": "plan"}}}, True)[0].component, "CLAUDE-PLAN-THINK")
+        self.assertEqual(renderer.feed({"type": "stream_event", "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "plan text"}}}, True)[0].component, "CLAUDE-PLAN")
 
     def test_stream_and_replay_sink(self):
         renderer = ClaudeLogRenderer()

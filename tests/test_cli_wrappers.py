@@ -74,7 +74,7 @@ class WrapperUnitTests(unittest.TestCase):
         with patch("vulnhunt.cli.claude_code.run_process", side_effect=fake_process):
             ClaudeWrapper(Config(), logger=lambda component, message: logs.append((component, message))).plan("audit", 1, [], ".")
         self.assertIn(("CLAUDE-PLAN", "子代理启动：规划攻击路径"), logs)
-        self.assertEqual(1, logs.count(("CLAUDE-PLAN", "正在执行：Running Fetch homepage headers")))
+        self.assertEqual(0, logs.count(("CLAUDE-PLAN", "正在执行：Running Fetch homepage headers")))
         self.assertIn(("CLAUDE-PLAN", "子代理结束（completed）：Extract signing logic"), logs)
         self.assertIn(("CLAUDE-PLAN", "后台任务启动：Probe API prefixes"), logs)
         self.assertIn(("CLAUDE-PLAN", "后台任务结束（completed）：Probe API prefixes"), logs)

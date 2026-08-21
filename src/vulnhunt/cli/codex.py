@@ -10,9 +10,13 @@ class CodexWrapper:
         # Codex 会相对于 cwd 再解析 -C/-o；因此这里必须先固定为绝对路径，
         # 避免出现 workspace\runs\... 这样的错误嵌套路径（Windows 下报 os error 3）。
         workspace=Path(workspace).resolve()
+        run_root=workspace.parents[1]
         prompt=(f"任务：{task.description}\n"
                 f"要求输出：{task.required_output}\n"
                 f"相关上下文：{task.relevant_context or '无'}\n"
+                f"本次运行目录：{run_root}\n"
+                f"本任务工作目录：{workspace}\n"
+                "严格限制：只能读取、写入和创建本任务工作目录及其子目录中的文件。禁止访问本任务目录之外的任何路径，包括运行目录父级、兄弟任务目录、项目目录和用户目录。禁止使用 ..、切换到其他目录或通过绝对路径绕过限制。\n"
                 "请严格只输出一个 JSON 对象，不要输出 Markdown、解释文字或额外内容。"
                 "字段必须包含 status、summary、findings；status 使用 SUCCESS、FAILURE 或 PARTIAL。")
         exe=resolve_executable([self.config.codex_exec]); output_file=Path(workspace)/'_last_message.json'; session_file=Path(workspace)/'.codex_session'; session_id=session_file.read_text(encoding='utf-8').strip() if session_file.exists() else ''; log_file=f'codex_{task.id}.jsonl'

@@ -84,7 +84,7 @@ class ClaudeWrapper:
                             pass
             plan_stream=is_plan_stream(ev, event, plan_tool_ids)
             for action in self._renderer.feed(ev, plan_stream): apply(action)
-        r=run_process(args,cwd=work_dir,input_text=planner_prompt(goal,round_no,prior),timeout_s=self.config.claude_timeout_s,cancel_event=self.cancel_event,on_stdout_line=on_line)
+        r=run_process(args,cwd=work_dir,input_text=planner_prompt(goal,round_no,prior,work_dir),timeout_s=self.config.claude_timeout_s,cancel_event=self.cancel_event,on_stdout_line=on_line)
         if r.exit_code: raise RuntimeError(r.stderr or 'claude failed')
         envelopes=[]
         for line in r.stdout.splitlines():

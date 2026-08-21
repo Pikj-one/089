@@ -10,8 +10,7 @@ class ClaudeWrapper:
     def health_check(self): return run_process([resolve_executable([self.config.claude_exec]),'--version'],timeout_s=20).exit_code==0
     def plan(self,goal,round_no,prior,work_dir):
         work_dir=Path(work_dir).resolve()
-        target_dir=Path(self.config.target_dir).resolve()
-        self.session_id=self.session_id or str(uuid.uuid4()); args=[resolve_executable([self.config.claude_exec]),'-p','', '--output-format','stream-json','--include-partial-messages','--verbose','--permission-mode','bypassPermissions','--add-dir',str(target_dir),'--session-id',self.session_id]
+        self.session_id=self.session_id or str(uuid.uuid4()); args=[resolve_executable([self.config.claude_exec]),'-p','', '--output-format','stream-json','--include-partial-messages','--verbose','--permission-mode','bypassPermissions','--session-id',self.session_id]
         subagent_input_parts={}
         tool_ids_by_index={}
         plan_tool_ids=set()

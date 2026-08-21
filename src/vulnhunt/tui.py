@@ -10,6 +10,9 @@ class TUI:
     """Small stdlib console facade; orchestration remains usable without a TTY."""
     def __init__(self):
         self._lock = threading.Lock()
+        self._output_queue = queue.Queue()
+        self._output_thread = threading.Thread(target=self._output_loop, daemon=True)
+        self._output_thread.start()
         self._aborted = threading.Event()
         self._stream_component = None
         self._stream_parts = []
@@ -29,11 +32,42 @@ class TUI:
         except OSError:
             pass
 
+    def _output_loop(self):
+        while True:
+            kind, payload = self._output_queue.get()
+            try:
+                if kind == "log":
+                    self._write_log(*payload)
+                elif kind == "stream":
+                    self._write_stream(*payload)
+                elif kind == "stream_end":
+                    self._write_stream_end()
+                elif kind == "transcript":
+                    self._transcribe(payload)
+                elif kind == "clear_prompt":
+                    with self._lock:
+                        sys.stdout.write("\r\x1b[2K\r")
+                        sys.stdout.flush()
+            finally:
+                self._output_queue.task_done()
+
+    def _enqueue(self, kind, payload=None):
+        self._output_queue.put((kind, payload))
+
+    def flush_output(self):
+        """Wait until all already-enqueued UI output has been rendered."""
+        self._output_queue.join()
+
     def log(self, component, message):
         self._last_activity = time.monotonic()
+        self._enqueue("log", (component, message))
+
+    def _write_log(self, component, message):
+        if self._stream_component is not None:
+            self._write_stream_end()
         line = f"[{time.strftime('%H:%M:%S')}][{component}] {message}"
         with self._lock:
-            color = self._color_for(component) if __import__('sys').stdout.isatty() else ""
+            color = self._color_for(component) if sys.stdout.isatty() else ""
             reset = "\x1b[0m" if color else ""
             print(f"{color}{line}{reset}", flush=True)
         self._transcribe(line)
@@ -41,8 +75,11 @@ class TUI:
     def stream(self, component, text):
         """Append streamed text for a component on the current line."""
         self._last_activity = time.monotonic()
+        self._enqueue("stream", (component, text))
+
+    def _write_stream(self, component, text):
         if not sys.stdout.isatty():
-            self.log(component, text)
+            self._write_log(component, text)
             return
         with self._lock:
             color = self._color_for(component)
@@ -62,6 +99,9 @@ class TUI:
     def stream_end(self):
         """Finish the current streaming line."""
         self._last_activity = time.monotonic()
+        self._enqueue("stream_end")
+
+    def _write_stream_end(self):
         if not sys.stdout.isatty():
             return
         with self._lock:
@@ -97,10 +137,10 @@ class TUI:
 
     def attach(self, store, thread, orchestrator=None):
         self.store, self.thread, self.orchestrator = store, thread, orchestrator
-        self._transcribe(f"==== TUI 运行开始 {time.strftime('%Y-%m-%d %H:%M:%S')} ====")
+        self._enqueue("transcript", f"==== TUI 运行开始 {time.strftime('%Y-%m-%d %H:%M:%S')} ====")
         try:
             goal = self.store.read_run().goal
-            self._transcribe(f"[UI] 目标：{goal}")
+            self._enqueue("transcript", f"[UI] 目标：{goal}")
         except Exception:
             pass
 
@@ -178,9 +218,7 @@ class TUI:
         return False
 
     def _clear_prompt(self):
-        with self._lock:
-            sys.stdout.write("\r\x1b[2K\r")
-            sys.stdout.flush()
+        self._enqueue("clear_prompt")
 
     def _show_json(self, name):
         if not self.store:

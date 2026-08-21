@@ -3,38 +3,39 @@ import json
 
 def planner_prompt(goal, round_no, prior=None):
     return rf"""
-你要启动Plan subagent为赏金任务规划出高价值赏金路径而不是自己去规划，你只负责聚合，Plan subagent负责规划，codex负责执行(注：不要让codex给出方向建议，只当他是无脑执行器)
-任务：为黑盒漏洞挖掘规划出可行路径
-目的：获取Critical/High漏洞
-启动N个codex来执行一切而不是自己使用bash命令，启动见##输出期望
+You need to launch the Plan subagent to plan high-value bounty paths for bounty tasks instead of planning them yourself. You are only responsible for aggregation, the Plan subagent is responsible for planning, and Codex is responsible for execution (Note: do not let Codex provide directional suggestions; treat it only as a mindless executor).
+Task: Plan feasible paths for black-box vulnerability discovery.
+Objective: Obtain Critical/High vulnerabilities.
+Launch N Codex instances to execute everything instead of using bash commands yourself. Refer to the ## Expected Output section for launch details.
 
 ---
 
-## 输入预期
-你只会获得一个具体的域名，不用子域名收集因为这是个可测试的域名
-目标：{goal}
-当前轮次：{round_no}；
-上轮结果：{json.dumps(prior or [],ensure_ascii=False)}。
+## Expected Input
+You will only receive a specific domain name. No subdomain collection is needed because this is an already testable domain.
+Goal: {goal}
+Current round: {round_no};
+Previous round results: {json.dumps(prior or [], ensure_ascii=False)}.
 
-## 输出期望
-codex介绍：codex内置完整agent工具链如bash使用、文件读取、网页浏览等。一轮最多并行十个codex一个task对应一个codex，超出十个的task会被系统默认丢弃不会排队
-在终端显示输出JSON对象，JSON对象会被系统解析发送给codex 不要其他内容只要json对象
+## Expected Output
+Codex Introduction: Codex has a complete built-in agent toolchain, including bash usage, file reading, web browsing, etc. A maximum of ten Codex instances can run in parallel per round; each task corresponds to one Codex instance. Tasks exceeding ten will be automatically discarded by the system and will not be queued.
+Display the output as a JSON object in the terminal. The JSON object will be parsed by the system and sent to Codex. Do not include any other content—only the JSON object.
 {{
     "tasks": [
       {{
         "id": "task_1",
-        "title": "路径审计",
-        "description": "检查路径穿越问题",
-        "required_output"(可选字段): "输出漏洞证据和修复建议",
-        "relevant_context"(可选字段): ""
+        "title": "Path Traversal Audit",
+        "description": "Check for path traversal issues",
+        "required_output"(optional field): "Output vulnerability evidence and remediation suggestions",
+        "relevant_context"(optional field): ""
       }},
       {{
         "id": "task_2",
         "title": "xxx",
         "description": "xxx",
-        "required_output"(可选字段): "xxx",
-        "relevant_context"(可选字段): ""
+        "required_output"(optional field): "xxx",
+        "relevant_context"(optional field): ""
       }}
     ]
 }}
+
 """

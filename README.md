@@ -1,133 +1,43 @@
-# VulnHunt
+# vulnhunt
 
-VulnHunt 是一个纯 Python 标准库实现的漏洞挖掘编排 MVP：Claude Code 负责生成审计计划，Codex CLI 并发执行子任务，Orchestrator 负责轮次、状态持久化和报告生成。
+自动化黑盒漏洞挖掘编排框架（v0.3.10）。**Claude 当大脑做规划，Codex 当手去执行**——Claude 把目标拆成 JSON 任务列表，分发给并行 Codex 实例，循环多轮直至 `max_rounds`，产出漏洞发现与报告。
 
-## 当前能力
+```
+目标/上轮结果 → Claude 大脑 → Plan subagent → JSON tasks → Codex x N（并行） → 结果 → 下轮
+                          └──────── 循环（默认最多 50 轮）──────────────┘
+```
 
-- 纯标准库，无运行时第三方依赖
-- `dry_run` 模式可在不调用外部 CLI 的情况下验证完整流程
-- 提供交互式 `tui` 入口，可查看运行状态、任务文件和发现文件
-- Claude/Codex 子进程通过 stdin 接收任务，支持 Windows 超时进程树清理
-- 每次运行保存计划、任务输入、任务结果、状态快照和报告
-- 支持 `start`、`resume`、`doctor`、`log` 命令
-- Claude stream-json 日志支持直播全量渲染，以及 TUI/命令行回放
-
-## 环境
-
-- Python 3.11+
-- 使用真实流程时，需要可执行的 Claude Code CLI 和 Codex CLI
-- Windows 下建议在 `config.toml` 中填写 native `.exe` 路径
+- **目标**：`*.imou.com`（授权范围），关注"垃圾漏洞"清单——安全头缺失、CORS/Self-XSS、版本号/方法名/类名泄露、账号/验证码爆破（见 `CLAUDE.md`）。
+- **架构**：纯 stdlib、零第三方依赖、Python ≥ 3.11；本地依赖 `claude` 与 `codex` 两个 CLI。
+- **状态**：单元测试 20 个全过；⚠️ **从未实跑过**，全链路待端到端验证。
 
 ## 快速开始
 
-项目根目录执行：
-
-```powershell
-$env:PYTHONPATH = "src"
-python -m vulnhunt start "审计 demo/target.py 是否存在路径穿越"
+```bash
+pip install -e .
+vulnhunt doctor                       # 检查 claude / codex 是否可用
+vulnhunt start "审计 imou.com 首页安全头配置"   # 先小目标试跑一轮
 ```
 
-默认配置启用 `dry_run = true`，运行结束后会在项目目录外的 `../vulnhunt-runs/<年>/<月>/<日>/<时>-<分>-<run_id>/report/` 生成 `report.md` 和 `report.json`。
+## 文档
 
-也可以安装本地命令：
+| 文档 | 内容 |
+|---|---|
+| [docs/architecture.md](docs/architecture.md) | 深度架构设计：状态机、stream-json 规划捕获、codex 会话续跑、进程管理、落盘协议（源码级） |
+| [docs/usage.md](docs/usage.md) | 安装与命令、TUI 交互、运行产物目录、安全注意事项 |
+| [docs/configuration.md](docs/configuration.md) | 配置项对照表与 `VULNHUNT_*` 环境变量（含"声明但未使用"字段） |
+| [docs/testing.md](docs/testing.md) | 测试跑法、真实 CLI 门控、各测试文件覆盖点 |
+| [docs/known-gaps.md](docs/known-gaps.md) | 已知缺口 / 待办（findings 不落盘、报告简陋、死代码等） |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | 故障排查指南：环境、运行失败、Windows、resume、日志定位 |
+| [docs/development.md](docs/development.md) | 开发 / 维护指南：改哪里速查、常见任务、测试规范、发布 |
 
-```powershell
-python -m pip install -e .
-vulnhunt start "审计目标目录"
-```
+## ⚠️ 授权与安全
 
-## 配置真实 CLI
+仅对授权范围 `*.imou.com` 使用；工具会向目标发主动请求，且顶层 Claude 以 `bypassPermissions`、codex 以 `danger-full-access` 沙箱运行——无授权使用可能违法，请勿在目标之外误触发。详见 [docs/usage.md](docs/usage.md) 安全章节。
 
-如果 `claude` 和 `codex` 已加入系统 PATH，只需修改开关：
+## 上手建议
 
-```toml
-claude_exec = "claude"
-codex_exec = "codex"
-target_dir = "."
-dry_run = false
-max_rounds = 2
-max_workers = 3
-```
-
-也可以通过全局环境变量覆盖：
-
-```powershell
-$env:VULNHUNT_CLAUDE_EXEC = "claude"
-$env:VULNHUNT_CODEX_EXEC = "codex"
-$env:VULNHUNT_DRY_RUN = "false"
-```
-
-启动前可以检查 CLI：
-
-```powershell
-python -m vulnhunt doctor
-```
-
-环境变量 `VULNHUNT_<字段名大写>` 可以覆盖配置文件，例如 `VULNHUNT_DRY_RUN=false`。
-
-## 恢复与证据
-
-运行目录采用以下布局：
-
-```text
-../vulnhunt-runs/<年>/<月>/<日>/<时>-<分>-<run_id>/
-├── run.json
-├── state.json
-├── plans/
-├── tasks/
-├── workspaces/
-├── findings/
-├── logs/
-└── report/
-```
-
-恢复已有运行：
-
-```powershell
-python -m vulnhunt resume ../vulnhunt-runs/<年>/<月>/<日>/<时>-<分>-<run_id>
-```
-
-运行证据默认存放在项目目录外的 `../vulnhunt-runs/`，不进入 Git，也不会被 `git pull` 等操作影响。
-
-## 开发验证
-
-```powershell
-$env:PYTHONPATH = "src"
-python -m unittest discover -s tests -v
-python -m compileall -q src
-```
-
-真实 CLI 测试默认跳过，避免意外消耗 token。确认本机 CLI、登录状态和权限后显式开启：
-
-```powershell
-$env:PYTHONPATH = "src"
-$env:VULNHUNT_REAL_TESTS = "1"
-python -m unittest tests.test_real_cli -v
-```
-
-真实测试会分别调用 Claude 生成最小 Plan、调用 Codex 生成最小结构化结果；通常比单元测试耗时更长。
-
-## 交互式 TUI
-
-启动 TUI 后先输入目标，随后使用 `>` 提示符输入命令：
-
-```powershell
-python -m vulnhunt tui
-```
-
-支持 `status`、`tasks`、`findings`、`logs`、`claude [round]`、`abort` 和 `quit`。运行结束后仍可回放 Claude 日志。
-
-也可以直接回放运行目录中最新一轮日志，或指定轮次：
-
-```powershell
-python -m vulnhunt log ../vulnhunt-runs/<年>/<月>/<日>/<时>-<分>/<run_id>
-python -m vulnhunt log ../vulnhunt-runs/<年>/<月>/<日>/<时>-<分>/<run_id> --round 1
-```
-
-## 设计说明
-
-架构决策、Windows CLI 进程约束、结果权威源和后续联调注意事项见 [docs/architecture.md](docs/architecture.md)。
-
-## 当前限制
-
-当前版本是 MVP：TUI 仅提供基础日志 facade，恢复流程和完成判定仍在持续增强；真实 CLI 联调需要本机分别验证 Claude Code 与 Codex 的版本、权限和 sandbox 配置。
+1. `pip install -e .` → `vulnhunt doctor`；
+2. 小目标试跑一轮，用 `vulnhunt log <run_dir> [--round N]` 或 `vulnhunt tui` 观察规划与执行；
+3. 链路确认后，再按 `CLAUDE.md` 的漏洞清单规划全量挖掘；
+4. 投入使用前先补 [docs/known-gaps.md](docs/known-gaps.md) 中标 ⭐ 的缺口（findings 落盘、报告完善）。

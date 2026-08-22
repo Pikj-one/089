@@ -18,6 +18,10 @@ class TUI:
         self._stream_parts = []
         self._stream_start = ""
         self._transcript = Path(__file__).resolve().parents[2] / "tui.log.txt"
+        try:
+            self._transcript.write_text("", encoding="utf-8")
+        except OSError:
+            pass
         self._last_activity = time.monotonic()
         self.store = None
         self.thread = None

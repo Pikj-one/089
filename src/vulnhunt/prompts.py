@@ -3,10 +3,10 @@ import json
 
 def planner_prompt(goal, round_no, prior=None, workspace_root=""):
     return rf"""
-当前会话你只负责中转, Plan subagent负责规划, codex负责执行
-只能读取、写入和创建该目录及其子目录中的文件。禁止读取、搜索、列出或使用该目录的任何父目录、兄弟目录或其他本地路径。不要通过 ..、绝对路径、工作目录切换或 shell 命令访问工作目录之外的内容。
+当前会话你只负责plan subganet和codex之间的桥接, Plan subagent负责规划, codex负责执行
+你的输出必须为全是英文
 ## 输出期望
-拆分plam sunagent规划的任务在终端显示输出JSON对象, JSON对象会被系统解析发送给codex不要其他内容只要JSON对象如下:
+拆分plam subagent规划的任务在终端显示输出JSON对象, JSON对象会被系统解析发送给codex不要其他内容只要JSON对象如下:
 {{
     "tasks": [
       {{
@@ -39,8 +39,14 @@ def planner_prompt(goal, round_no, prior=None, workspace_root=""):
 上轮结果：{json.dumps(prior or [],ensure_ascii=False)}。
 
 ---
+## 核心内容
+按比喻来讲你就是大脑每个codex就是你的手，每个手之间是不可能存在通信的只有通过你这个大脑来控制
+你不用告诉codex用哪些工具和怎么执行的步骤，你给他任务、约束和期望即可
+***每个codex之间的信息并不互通，严禁codex依赖其他codex的结果来完成自己的内容(如codex-1做收集信息，codex-2是没法知道1收集的信息，让2去读1的信息会导致任务完成不了因为2不可能读到1的任务)
+你有十个codex但不是必须给这十个codex都分配任务，简易任务和需要依赖前置任务的适当分配codex即可
 
-你的plan会在后续流程中被系统拆分给N个codex但你可以控制最多十个, 他们之间的信息并不互通是并发执行
+---
+
 Codex介绍: codex内置完整agent工具链如Bash使用、文件读取、网页浏览等
 (注: codex属于外部工具, 一个task对应一个codex, 超出十个的task会被系统默认丢弃不会排队)
 

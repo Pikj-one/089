@@ -1,6 +1,6 @@
 # vulnhunt
 
-自动化黑盒漏洞挖掘编排框架（v0.3.10）。**Claude 当大脑做规划，Codex 当手去执行**——Claude 把目标拆成 JSON 任务列表，分发给并行 Codex 实例，循环多轮直至 `max_rounds`，产出漏洞发现与报告。
+自动化黑盒漏洞挖掘编排框架（v0.3.11）。**Claude 当大脑做规划，Codex 当手去执行**——Claude 把目标拆成 JSON 任务列表，分发给并行 Codex 实例，循环多轮直至 `max_rounds`，产出漏洞发现与报告。
 
 ```
 目标/上轮结果 → Claude 大脑 → Plan subagent → JSON tasks → Codex x N（并行） → 结果 → 下轮

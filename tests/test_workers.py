@@ -23,7 +23,7 @@ class WorkerPoolTests(unittest.TestCase):
             tasks = [TaskSpec(f"task_{i}", f"t{i}", "desc") for i in range(5)]
             results = WorkerPool(config, codex, store).run(tasks, 1)
             self.assertEqual(len(results), 2)
-            self.assertEqual(codex.calls, ["task_0", "task_1"])
+            self.assertEqual(sorted(codex.calls), ["task_0", "task_1"])
             self.assertTrue((store.root / "tasks/round_001_task_0_result.json").exists())
             self.assertTrue((store.root / "tasks/round_001_task_1_result.json").exists())
             self.assertFalse((store.root / "tasks/round_001_task_2_result.json").exists())

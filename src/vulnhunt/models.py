@@ -40,7 +40,7 @@ class WorkerResult:
 
 @dataclass
 class Run:
-    run_id: str; goal: str; created_at: str; status: RunStatus=RunStatus.INIT; current_round: int=0; max_rounds: int=5; config_snapshot: dict=field(default_factory=dict); target_dir: str="."; updated_at: str=""
+    run_id: str; goal: str; created_at: str; status: RunStatus=RunStatus.INIT; current_round: int=0; max_rounds: int=5; config_snapshot: dict=field(default_factory=dict); updated_at: str=""
     def to_dict(self): return _plain(self)
     @classmethod
-    def from_dict(cls,d): d=dict(d); d["status"]=RunStatus(d.get("status","INIT")); return cls(**d)
+    def from_dict(cls,d): d=dict(d); d["status"]=RunStatus(d.get("status","INIT")); d.pop("target_dir", None); return cls(**d)  # 兼容旧 run.json 的已删除字段

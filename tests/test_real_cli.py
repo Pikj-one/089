@@ -9,7 +9,7 @@ from vulnhunt.cli.codex import CodexWrapper
 @unittest.skipUnless(os.getenv("VULNHUNT_REAL_TESTS") == "1", "set VULNHUNT_REAL_TESTS=1 to call local CLIs")
 class RealCliTests(unittest.TestCase):
     def setUp(self):
-        self.config = Config(claude_exec="claude", codex_exec="codex", claude_timeout_s=120, codex_timeout_s=120, target_dir=".")
+        self.config = Config(claude_exec="claude", codex_exec="codex", claude_timeout_s=120, codex_timeout_s=120)
 
     def test_claude_real_plan(self):
         plan = ClaudeWrapper(self.config).plan("只检查项目入口并给出一个最小审计计划", 1, [], ".")

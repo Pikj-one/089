@@ -26,7 +26,7 @@ def main(argv=None):
         try: goal=input('goal> ').strip()
         except (EOFError, KeyboardInterrupt): return
         if not goal: return
-        c=load_config(a.config); tui=TUI(); run=Run(uuid.uuid4().hex[:12],goal,datetime.now(timezone.utc).isoformat(),max_rounds=c.max_rounds,config_snapshot=c.__dict__,target_dir=c.target_dir); store=RunStore.create(c.runs_root,run); claude=ClaudeWrapper(c,tui.log,store=store,streamer=tui.stream,stream_end=tui.stream_end); codex=CodexWrapper(c,tui.log,store=store); orchestrator=Orchestrator(c,store,claude,codex)
+        c=load_config(a.config); tui=TUI(); run=Run(uuid.uuid4().hex[:12],goal,datetime.now(timezone.utc).isoformat(),max_rounds=c.max_rounds,config_snapshot=c.__dict__); store=RunStore.create(c.runs_root,run); claude=ClaudeWrapper(c,tui.log,store=store,streamer=tui.stream,stream_end=tui.stream_end); codex=CodexWrapper(c,tui.log,store=store); orchestrator=Orchestrator(c,store,claude,codex)
         def execute():
             result=orchestrator.run_loop(); tui.log('ORCH', f"运行结束：{result.status.value}"); tui.log('ORCH', f"报告已生成：{build_report(store.root)}")
         worker=__import__('threading').Thread(target=execute,daemon=True); worker.start(); tui.attach(store,worker,orchestrator); tui.command_loop(); return
@@ -35,6 +35,6 @@ def main(argv=None):
         claude=ClaudeWrapper(c); codex=CodexWrapper(c); print('claude:',claude.health_check()); print('codex:',codex.health_check()); return
     if a.cmd=='resume': store=RunStore(a.run_dir)
     else:
-        run=Run(uuid.uuid4().hex[:12],a.goal,datetime.now(timezone.utc).isoformat(),max_rounds=c.max_rounds,config_snapshot=c.__dict__,target_dir=c.target_dir); store=RunStore.create(c.runs_root,run)
+        run=Run(uuid.uuid4().hex[:12],a.goal,datetime.now(timezone.utc).isoformat(),max_rounds=c.max_rounds,config_snapshot=c.__dict__); store=RunStore.create(c.runs_root,run)
     claude=ClaudeWrapper(c,store=store); codex=CodexWrapper(c,store=store)
     result=Orchestrator(c,store,claude,codex).run_loop(); print(result.status.value); print(build_report(store.root))

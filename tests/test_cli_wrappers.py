@@ -3,7 +3,8 @@ from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 from vulnhunt.config import Config
-from vulnhunt.models import TaskSpec, TaskResultStatus
+from vulnhunt.models import TaskSpec, TaskResultStatus, Run
+from vulnhunt.state import RunStore
 from vulnhunt.cli.base import ProcResult
 from vulnhunt.cli.claude_code import ClaudeWrapper
 from vulnhunt.cli.codex import CodexWrapper
@@ -107,6 +108,28 @@ class WrapperUnitTests(unittest.TestCase):
         self.assertEqual(result.status, TaskResultStatus.SUCCESS)
         self.assertTrue(Path(captured['cwd']).is_absolute())
         self.assertTrue(Path(captured['args'][captured['args'].index("-C") + 1]).is_absolute())
+
+    def test_codex_wrapper_passes_blackboard_add_dir(self):
+        captured = {}
+
+        def fake_process(args, cwd=None, **kwargs):
+            captured['args'] = args
+            captured['prompt'] = kwargs.get('input_text', '')
+            output_file = Path(args[args.index("-o") + 1])
+            output_file.write_text(json.dumps({"status": "SUCCESS", "summary": "ok", "findings": []}), encoding="utf-8")
+            return ProcResult(0, "", "")
+
+        with tempfile.TemporaryDirectory() as d, patch("vulnhunt.cli.codex.run_process", side_effect=fake_process):
+            store = RunStore.create(d, Run("r1", "audit", "now"))
+            workspace = store.root / "workspaces" / "round_001_task_1"
+            workspace.mkdir(parents=True)
+            result = CodexWrapper(Config(), store=store).exec_task(TaskSpec("task_1", "test", "test"), workspace)
+
+        self.assertEqual(result.status, TaskResultStatus.SUCCESS)
+        self.assertIn("--add-dir", captured['args'])
+        blackboard = str((store.root / "blackboard").resolve())
+        self.assertEqual(captured['args'][captured['args'].index("--add-dir") + 1], blackboard)
+        self.assertIn(blackboard, captured['prompt'])
 
 
 if __name__ == "__main__": unittest.main()

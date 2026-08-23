@@ -15,6 +15,11 @@ class CountingCodex:
 
 
 class WorkerPoolTests(unittest.TestCase):
+    def test_runstore_creates_blackboard_dir(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = RunStore.create(d, Run("r1", "audit", "now"))
+            self.assertTrue((store.root / "blackboard").is_dir())
+
     def test_drops_tasks_beyond_max_workers(self):
         with tempfile.TemporaryDirectory() as d:
             config = Config(runs_root=d, max_workers=2)

@@ -117,7 +117,7 @@ claude -p "" --output-format stream-json --include-partial-messages --verbose \
   - 唯一工作目录 = `workspace_root`（run 目录绝对路径），禁止越权访问父目录；
   - 目标 / 当前轮次 / 上轮结果（prior，JSON 序列化回填）。
 - **大脑-手约束**：
-  - "每个 codex 之间信息并不互通，严禁 codex 依赖其他 codex 的结果"；
+  - "codex 通过共享黑板目录交换公共资源/中间结果，黑板跨轮、跨 codex 保留；同一轮内并行任务互不依赖（仅跨轮可靠）"；
   - "第一轮你只会获得一个域名……严禁刻意子域名收集"；
   - "你有十个 codex 但不是必须都给……简易任务和依赖前置任务的适当分配即可"；
   - 注：超出 `max_workers`（默认 10）的 task 会被系统**直接丢弃不排队**（见 `known-gaps.md` 缺口 6 已解决）。
@@ -145,16 +145,17 @@ with ThreadPoolExecutor(max_workers=self.config.max_workers) as pool:
 ### 4.2 Codex 调用形态
 
 ```python
-codex exec "" -C <workspace> --json -o <workspace>/_last_message.json \
+codex exec "" -C <workspace> --add-dir <blackboard> --json -o <workspace>/_last_message.json \
       -s danger-full-access --skip-git-repo-check --color never
 ```
 
 - `-C <workspace>`：工作目录（先 `Path(workspace).resolve()` 固定为绝对路径，避免 Windows 下 cwd 相对嵌套成 `runs\...\workspaces\...` 的 os error 3）。
+- `--add-dir <blackboard>`：开放 `<run_dir>/blackboard/` 作为共享黑板目录（所有 codex 共享、跨轮保留）。仅 fresh 分支传入；`codex exec resume` 不支持该标志，续跑时黑板访问靠提示词传达。
 - `-s danger-full-access`：完整沙箱权限（执行命令、读写文件、联网）。**这是强沙箱声明，请只对授权目标使用**。
 - `--json -o _last_message.json`：codex 把最终回复写成 JSON 文件，vulnhunt 再轮询读取。
 - 任务提示词（模板内嵌）严格约束：
   - 要求输出 `status`（SUCCESS/FAILURE/PARTIAL）+ `summary` + `findings` 的**纯 JSON**；
-  - **只允许写本任务 workspace**，禁止 `..`、绝对路径、访问 tasks/logs/findings/report/其他任务目录；
+  - 需要供其他 codex 复用的公共资源/中间结果**只能写入黑板目录**；私有产物**只允许写本任务 workspace**，禁止 `..`、绝对路径、访问 tasks/logs/findings/report/其他任务目录；
   - "任务完成时结束所有产生的子进程"。
 
 ### 4.3 会话续跑
@@ -203,6 +204,7 @@ def _write(self, name, obj):
 ├── tasks/<tid>_input.json       # 任务输入
 ├── tasks/<tid>_result.json      # 任务结果（WorkerResult 序列化）
 ├── findings/                    # ⚠️ 目录恒空，save_finding() 无调用点
+├── blackboard/                  # codex 共享黑板目录（跨轮、跨 codex 保留）
 ├── logs/claude_round_<NNN>.jsonl / codex_<tid>.jsonl
 ├── report/report.json / report.md
 └── workspaces/round_<NNN>_<tid>/   # codex 独立工作目录（含 _last_message.json / .codex_session）
@@ -222,7 +224,7 @@ def _write(self, name, obj):
 | 决策 | 理由 | 代价 |
 |---|---|---|
 | 子进程而非 in-process 调用 LLM | 隔离、可强杀、复用成熟 CLI | 协议对接复杂（stream-json 解析） |
-| Codex 任务间不互通 | 天然并行、上下文干净、互不污染 | 无法复用彼此的中间结果，靠大脑汇总 |
+| Codex 任务间通过黑板共享中间结果 | 复用公共资源/中间结果、跨轮保留 | 同轮并行写黑板有竞态（仅跨轮可靠），共享区靠提示词约束 |
 | Claude 固定 session-id | 跨轮延续规划上下文 | 长 run 上下文成本持续累积 |
 | 每任务独立 workspace + 会话续跑 | 断点续跑、故障隔离 | 磁盘占用、需要 .codex_session 机制 |
 | 纯 stdlib、零依赖 | 部署即用、无供应链面 | 一切轮子自己造（TUI、渲染、并发） |

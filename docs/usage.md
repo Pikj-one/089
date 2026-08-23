@@ -79,6 +79,7 @@ vulnhunt-runs/2026/08/22/14-30/abc123def456/
 ├── tasks/round_001_task_1_input.json   # 发给 codex 的任务输入
 ├── tasks/round_001_task_1_result.json  # codex 返回结果（status/summary/findings/...）
 ├── findings/             # ⚠️ 目录恒空：save_finding() 从未被调用（见 known-gaps）
+├── blackboard/           # codex 共享黑板目录（所有 codex 共享、跨轮保留）
 ├── logs/claude_round_001.jsonl   # claude 每轮 stream-json 原始日志
 ├── logs/codex_task_1.jsonl       # codex 每任务日志
 ├── report/report.json    # 聚合 run + 全部 task 结果
@@ -96,4 +97,4 @@ vulnhunt-runs/2026/08/22/14-30/abc123def456/
 - 顶层 Claude 以 `--permission-mode bypassPermissions` 运行、codex 以 `-s danger-full-access` 沙箱运行，**请勿在目标之外的环境中误触发**。
 - Codex 任务 prompt 严格限制只写本任务 workspace（禁止 `..` / 绝对路径绕过），但这是**提示词约束而非强隔离**——若信任边界敏感，需额外加固。
 - 真实 CLI 测试（`VULNHUNT_REAL_TESTS=1`）会真实调用模型并可能发请求，谨慎开启。
-- `workspaces/` 与 `logs/` 里可能残留 codex 抓取的页面、响应、token 类敏感数据，交付/归档前请清理。
+- `workspaces/`、`logs/` 与 `blackboard/` 里可能残留 codex 抓取的页面、响应、token 类中间数据；黑板内容跨轮保留，交付/归档前请一并清理。

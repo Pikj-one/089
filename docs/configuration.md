@@ -32,6 +32,7 @@ max_workers = 10              # 并行 Codex 数
 | `codex_exec` | `"codex"` | — | ✅ `codex.py` |
 
 > 若未来需要 claude/codex 的 model、permission 模式、停滞检测等参数，需**重新添加字段并接线**（入口见 [development.md](development.md)）。
+> 黑板目录固定在 `<run_dir>/blackboard/`，由 run 目录派生，非配置项。
 
 ## 4. 环境变量用法示例
 

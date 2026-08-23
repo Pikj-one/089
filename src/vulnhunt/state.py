@@ -6,12 +6,12 @@ from .models import Run
 def now(): return datetime.now(timezone.utc).isoformat()
 class RunStore:
     def __init__(self, run_dir):
-        self.root=Path(run_dir); self.plans=self.root/'plans'; self.tasks=self.root/'tasks'; self.findings=self.root/'findings'; self.logs=self.root/'logs'; self.report=self.root/'report'
+        self.root=Path(run_dir); self.plans=self.root/'plans'; self.tasks=self.root/'tasks'; self.findings=self.root/'findings'; self.logs=self.root/'logs'; self.report=self.root/'report'; self.blackboard=self.root/'blackboard'
     @classmethod
     def create(cls, runs_root, run):
         started_at=datetime.now().strftime('%Y/%m/%d/%H-%M')
         s=cls(Path(runs_root)/started_at/run.run_id)
-        for p in (s.root,s.plans,s.tasks,s.findings,s.logs,s.report): p.mkdir(parents=True,exist_ok=True)
+        for p in (s.root,s.plans,s.tasks,s.findings,s.logs,s.report,s.blackboard): p.mkdir(parents=True,exist_ok=True)
         project_claude_md=Path(__file__).resolve().parents[2]/'CLAUDE.md'
         if project_claude_md.is_file(): shutil.copy2(project_claude_md,s.root/'CLAUDE.md')
         s.save_run(run); return s

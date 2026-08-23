@@ -14,6 +14,7 @@ config.toml  →  VULNHUNT_<字段大写> 环境变量  →  代码内覆盖值(
 runs_root = "../vulnhunt-runs"  # 运行记录根目录（本地指向仓库外的 vulnhunt-runs）
 max_rounds = 50               # 最大轮次
 max_workers = 10              # 并行 Codex 数
+codex_timeout_s = 100000000   # 单任务 codex 超时（秒）；一亿≈暂不禁用，后续再收紧
 ```
 
 ## 3. 字段对照表
@@ -26,7 +27,7 @@ max_workers = 10              # 并行 Codex 数
 | `max_rounds` | `5` | `50` | ✅ `orchestrator.py` DECISION 判断 |
 | `max_workers` | `3` | `10` | ✅ `workers.py ThreadPoolExecutor` |
 | `claude_timeout_s` | `900` | — | ✅ `claude_code.py run_process` |
-| `codex_timeout_s` | `600` | — | ✅ `codex.py run_process` |
+| `codex_timeout_s` | `100_000_000` | `100000000` | ✅ `codex.py run_process` |
 | `codex_sandbox` | `"danger-full-access"` | — | ✅ `codex.py` 的 `-s` 参数 |
 | `claude_exec` | `"claude"` | — | ✅ `claude_code.py` |
 | `codex_exec` | `"codex"` | — | ✅ `codex.py` |

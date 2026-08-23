@@ -57,7 +57,7 @@
 | 场景 | 字段 | 默认 |
 |---|---|---|
 | Claude 单轮规划超时 | `claude_timeout_s` | 900s |
-| 单个 Codex 任务超时 | `codex_timeout_s` | 600s |
+| 单个 Codex 任务超时 | `codex_timeout_s` | `100_000_000`s（一亿，≈1157 天，暂等效不限制） |
 
 改法：`config.toml` 或环境变量（`VULNHUNT_CLAUDE_TIMEOUT_S`）。探测类任务（爆破/大范围扫描）建议调大；任务挂死时可调小并观察 FAILURE 归因。
 
@@ -69,6 +69,6 @@
 | `json.decoder.JSONDecodeError: ...` | Plan/结果 JSON 解析失败 | 见 2 节 / 查看对应 jsonl |
 | `FileNotFoundError: .../report/report.md` | 报告未生成 | run 未跑完即结束；先看 `state.json` 状态 |
 | `PermissionError: ...`（Windows） | 文件被占用 | TUI/其他进程正读该文件；关掉 TUI 再试 |
-| codex 报网络/认证错误 | codex 未登录或代理问题 | `codex login` / 检查代理环境变量 |
+| 任务失败但报错是 `Reading additional input from stdin...` | 这是 codex 启动读 stdin 的提示，被当作 stderr 捕获；真实原因通常是**超时被强杀**（该进程未生成 `_last_message.json`） | 看该任务 `*_result.json` 的 `duration_s`，若≈`codex_timeout_s` 则确系超时，调大超时或给任务减负 |
 
 > 排查不决时，把 `state.json` + 对应轮的 `claude_round_*.jsonl` 尾部 + 某个 FAILURE 任务的 `*_result.json` 三样一起拿出来对照 [architecture.md](architecture.md) 的时序看。

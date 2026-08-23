@@ -5,7 +5,7 @@ import os, tomllib
 @dataclass
 class Config:
     claude_exec: str="claude"; codex_exec: str="codex"; runs_root: str="runs"
-    max_rounds:int=5; max_workers:int=3; claude_timeout_s:int=900; codex_timeout_s:int=600; codex_sandbox:str="danger-full-access"
+    max_rounds:int=5; max_workers:int=3; claude_timeout_s:int=900; codex_timeout_s:int=100_000_000; codex_sandbox:str="danger-full-access"
 
 def load_config(path="config.toml", overrides=None):
     data={}

@@ -153,9 +153,10 @@ codex exec "" -C <workspace> --add-dir <blackboard> --json -o <workspace>/_last_
 - `--json -o _last_message.json`：codex 把最终回复写成 JSON 文件，vulnhunt 再轮询读取。
 - 任务提示词（模板内嵌）严格约束：
   - 要求输出 `status`（SUCCESS/FAILURE/PARTIAL）+ `summary` + `findings` 的**纯 JSON**；
-  - **共享黑板契约**：抓取的可复用原始资源（页面/JS 包/robots.txt/响应头/API 响应）与派生中间结果**必须写入黑板**，命名规范 `<工作目录名>_<原文件名>`（如 `round_001_task_2_umi.js`）；**下载前先查黑板**，已有同名/同 URL 资源直接复用、禁止重复下载；私有产物（脚本、临时文件、最终 JSON 报告、截图）只写本任务 workspace；
+  - **共享黑板契约**：可写入黑板的共享资源为页面 HTML、JS 源码/提取产物、robots.txt、API 文档/响应提取物（JSON/文本）与派生中间结果（端点清单、指纹报告、路由/账号清单等），命名规范 `<工作目录名>_<原文件名>`（如 `round_001_task_2_umi.js`）；**禁止写入** CSS、图片、字体、原始 HTTP 响应头 dump（噪音资产，留在 workspace 即可）；**下载前先查黑板**，已有同名/同 URL 资源直接复用、禁止重复下载；私有产物（脚本、临时文件、最终 JSON 报告、截图）只写本任务 workspace；
   - 路径限制：本任务只允许访问 workspace 与共享黑板目录，禁止 `..`、绝对路径、访问 tasks/logs/findings/report/其他任务目录；
   - "任务完成时结束所有产生的子进程"。
+- codex 任务结束后（无论成败），`exec_task` 对黑板执行两道后处理（`src/vulnhunt/blackboard.py`）：`sanitize_blackboard()` 按后缀+内容启发式删除 CSS/图片/字体/响应头 dump 噪音文件；`format_blackboard_js()` 对未压缩的小型 .js 用 Prettier 静默格式化（跳过 >1MB 或平均行长 >2000 的压缩产物，失败静默忽略）。
 
 ### 4.3 会话续跑
 

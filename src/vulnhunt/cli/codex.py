@@ -18,9 +18,10 @@ class CodexWrapper:
         blackboard_contract=(
             f"""## 共享黑板契约（必须遵守）
 共享黑板目录：{blackboard}，所有 codex 共享、跨轮保留，可直接读写。
-1. 从网络抓取的**可复用**原始资源（首页/页面 HTML、JS/CSS 包、robots.txt、HTTP 响应头、API 文档/响应等）与派生的公共中间结果（端点清单、指纹报告、路由/账号清单等）属于**共享资源**，必须写入共享黑板，命名规范 `{name_tag}_<原文件名>`（如 `{name_tag}_umi.js`），不要写进本任务工作目录。
-2. **下载前先查黑板**：黑板上已存在同名/同 URL 的资源时，直接从黑板读取复用，禁止重复下载。
-3. 本任务工作目录只存放私有产物：仅供本任务单次使用的抓取、分析脚本、临时文件、本任务最终 JSON 报告、截图。
+1. **可写入黑板的共享资源**：页面 HTML、JS 源码/提取产物、robots.txt、API 文档/响应提取物（JSON/文本）以及派生的公共中间结果（端点清单、指纹报告、路由/账号清单等）。命名规范 `{name_tag}_<原文件名>`（如 `{name_tag}_umi.js`），不要写进本任务工作目录。
+2. **禁止写入黑板**：CSS 样式表、图片（png/jpg/jpeg/gif/svg/webp/ico/bmp）、字体（woff/woff2/ttf/eot/otf）、原始 HTTP 响应头 dump（如 `*_headers.txt`）。这些是不可复用噪音资产，留在本任务工作目录即可，禁止写入黑板。
+3. **下载前先查黑板**：黑板上已存在同名/同 URL 的资源时，直接从黑板读取复用，禁止重复下载。
+4. 本任务工作目录只存放私有产物：仅供本任务单次使用的抓取、分析脚本、临时文件、本任务最终 JSON 报告、截图。
 
 """
             if blackboard else ""
@@ -54,12 +55,25 @@ class CodexWrapper:
                 event=json.loads(line)
                 if event.get('type')=='thread.started' and event.get('thread_id'): session_file.write_text(event['thread_id'],encoding='utf-8'); break
             except json.JSONDecodeError: pass
+        result=None
         if p.exists():
             for _ in range(20):
                 try:
                     raw=p.read_text(encoding='utf-8').strip()
                     if raw:
-                        d=json.loads(raw); d['task_id']=task.id; result=WorkerResult.from_dict(d); self.logger(f"CODEX-{task.id}", f"任务 {task.id} 完成：{result.status.value}，发现 {len(result.findings)} 个问题"); return result
+                        d=json.loads(raw); d['task_id']=task.id; result=WorkerResult.from_dict(d); break
                 except (OSError, json.JSONDecodeError):
                     time.sleep(0.05)
-        result=WorkerResult(task.id,r.exit_code,TaskResultStatus.FAILURE,error=r.stderr,stdout_tail=r.stdout[-4000:],stderr_tail=r.stderr[-4000:],duration_s=r.duration_s); self.logger("ERROR", f"任务 {task.id} 失败：{result.error or '无结果文件'}"); return result
+        if result is None:
+            # 超时被强杀时，codex 的 stderr 只残留启动提示（如 "Reading additional input from stdin..."），会把真实原因掩盖掉。
+            # 这里在 timed_out 时优先报超时归因；原始 stderr 仍保留在 stderr_tail 供排查。
+            err=(f"codex 执行超时（>{self.config.codex_timeout_s}s），已强制结束进程，未生成结果文件 _last_message.json" if r.timed_out else r.stderr)
+            result=WorkerResult(task.id,r.exit_code,TaskResultStatus.FAILURE,error=err,stdout_tail=r.stdout[-4000:],stderr_tail=r.stderr[-4000:],duration_s=r.duration_s); self.logger("ERROR", f"任务 {task.id} 失败：{err or '无结果文件'}")
+        else:
+            self.logger(f"CODEX-{task.id}", f"任务 {task.id} 完成：{result.status.value}，发现 {len(result.findings)} 个问题")
+        # 无论成败，强制清理黑板上 codex 写入的噪音资产（css/图片/字体/响应头），并对小黑板 JS 做 Prettier 静默格式化。
+        if blackboard:
+            from ..blackboard import sanitize_blackboard, format_blackboard_js
+            sanitize_blackboard(blackboard, self.logger)
+            format_blackboard_js(blackboard, self.logger)
+        return result

@@ -1,3 +1,4 @@
 runs_root = "../vulnhunt-runs"
 max_rounds = 50
 max_workers = 10
+codex_timeout_s = 100000000  # 单任务 codex 超时（秒）；一亿≈暂不禁用，后续再收紧

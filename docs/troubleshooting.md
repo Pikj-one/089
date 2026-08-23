@@ -17,7 +17,7 @@
 | 运行立刻结束，状态 `FAILED` | `run_loop` 捕获异常归因为 FAILED | 看 `logs/claude_round_001.jsonl` 尾部；`state.json` 里 `status` 确认卡点 |
 | `claude -p` 退出码非 0 → `RuntimeError` | `claude_code.py` 末尾 `if r.exit_code: raise` | 复现：手动跑 `claude -p ... --output-format stream-json` 看 stderr；多半是认证/额度/上下文超限 |
 | Plan 输出无法解析成 JSON → run FAILED | `claude_code.py` `json.loads(raw)` 抛异常 | 检查 `logs/claude_round_*.jsonl` 最后几行：模型是否吐了 Markdown/解释而非纯 JSON；清洗规则只处理 ```json 围栏和"最后一行含 {" 的情况，多行杂讯会失败 |
-| 某个任务 `status=FAILURE` | `codex.py` 20 次轮询仍无 `_last_message.json` | 看该 task 的 `codex_<tid>.jsonl`；`tasks/<tid>_result.json` 的 `error/stdout_tail/stderr_tail` 有原始尾部输出 |
+| 某个任务 `status=FAILURE` | `codex.py` 20 次轮询仍无有效 `_last_message.json`。注：codex 在 JSON 前写解释文字导致解析失败的路径已修复（`_extract_json` 剥离前置文本，见 [known-gaps](known-gaps.md) §10）；残留原因通常是超时或输出完全非 JSON | 看该 task 的 `codex_<tid>.jsonl`；`tasks/<tid>_result.json` 的 `error/stdout_tail/stderr_tail` 有原始尾部输出 |
 | 所有任务都很快 FAILURE | codex 未认证 / 沙箱不可用 | 手动 `codex exec "" -C <临时目录> ...` 验证；确认 codex 登录态 |
 
 ## 3. Windows 专项
@@ -69,6 +69,6 @@
 | `json.decoder.JSONDecodeError: ...` | Plan/结果 JSON 解析失败 | 见 2 节 / 查看对应 jsonl |
 | `FileNotFoundError: .../report/report.md` | 报告未生成 | run 未跑完即结束；先看 `state.json` 状态 |
 | `PermissionError: ...`（Windows） | 文件被占用 | TUI/其他进程正读该文件；关掉 TUI 再试 |
-| 任务失败但报错是 `Reading additional input from stdin...` | 这是 codex 启动读 stdin 的提示，被当作 stderr 捕获；真实原因通常是**超时被强杀**（该进程未生成 `_last_message.json`） | 看该任务 `*_result.json` 的 `duration_s`，若≈`codex_timeout_s` 则确系超时，调大超时或给任务减负 |
+| 任务失败但报错是 `Reading additional input from stdin...` | 这是 codex 启动读 stdin 的提示，被当作 stderr 捕获；曾有的「JSON 前写解释文字导致解析失败」路径已在 `codex.py` 修复（`_extract_json` 剥离前置文本）。若仍 FAILURE 且 `_last_message.json` 是纯 JSON，则定位到 exit-code/超时 | 看该任务 `*_result.json` 的 `duration_s`，若≈`codex_timeout_s` 则确系超时，调大超时或给任务减负；否则直接读 `workspaces/<tid>/_last_message.json` 确认内容 |
 
 > 排查不决时，把 `state.json` + 对应轮的 `claude_round_*.jsonl` 尾部 + 某个 FAILURE 任务的 `*_result.json` 三样一起拿出来对照 [architecture.md](architecture.md) 的时序看。

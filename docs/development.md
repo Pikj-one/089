@@ -41,6 +41,8 @@ PYTHONPATH=src python -m unittest discover tests -v   # 跑测试
 
 给 codex 的提示词在 `src/vulnhunt/cli/codex.py` 的 `exec_task()` 内拼装，含**共享黑板契约**：抓取的可复用原始资源/派生中间结果必须写黑板（命名 `<工作目录名>_<原文件名>`）、下载前先查黑板再复用、私有产物只写 workspace。改动时保持纯 JSON 输出契约（status/summary/findings）。
 
+轮次阶段规则（信息收集轮 / 方向规划轮 / 利用深化轮）也在 `planner_prompt()` 的转发段内，改动时参考 [rounds.md](rounds.md) 保持三阶段约束一致。
+
 ### 3.2 加一个 TUI 命令
 
 `tui.py` 的 `_handle_command()` 里加分支即可：
@@ -94,7 +96,7 @@ def save_xxx(self, ...):
 
 ## 6. 发布流程
 
-1. 改 `pyproject.toml` 的 `version`（当前 0.3.8）；
+1. 改 `pyproject.toml` 的 `version`（当前 0.8.0）；
 2. 同步 `src/vulnhunt/__init__.py` 的 `__version__`；
 3. 跑全量测试确认绿；
 4. `pip install -e .` 本地验证新版本命令可用（如改了 CLI）；

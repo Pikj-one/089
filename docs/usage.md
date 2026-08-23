@@ -38,6 +38,8 @@ vulnhunt log vulnhunt-runs/2026/08/22/14-30/abc123def456 --round 3
 
 最简用法。流程：建 Run → 建 run 目录 → 循环状态机跑完全部轮次 → 打印最终状态（`COMPLETE/FAILED/ABORTED`）+ 报告路径。全程无交互；进程被杀或超时由内部 `cancel_event` / 超时机制兜底。
 
+轮次按阶段推进：第 1 轮只做信息收集（镜像/指纹/端点清单），第 2 轮由规划器定方向并开跑利用任务，之后轮次聚焦深化利用（详见 [rounds.md](rounds.md)）。正常节奏约 3~5 轮。
+
 ### `tui`
 
 交互式界面，核心价值是**实时看 Claude 规划思考**和 **Codex 任务进展**：

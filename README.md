@@ -1,6 +1,6 @@
 # vulnhunt
 
-自动化黑盒漏洞挖掘编排框架（v0.3.11）。**Claude 当大脑做规划，Codex 当手去执行**——Claude 把目标拆成 JSON 任务列表，分发给并行 Codex 实例，循环多轮直至 `max_rounds`，产出漏洞发现与报告。
+自动化黑盒漏洞挖掘编排框架（v0.8.0）。**Claude 当大脑做规划，Codex 当手去执行**——Claude 按「轮次阶段」把目标拆成 JSON 任务列表，分发给并行 Codex 实例，循环多轮直至 `max_rounds`，产出漏洞发现与报告。轮次按阶段推进：第 1 轮只做信息收集，第 2 轮由规划器定方向，之后轮次聚焦利用与验证（详见 [docs/rounds.md](docs/rounds.md)）。
 
 ```
 目标/上轮结果 → Claude 大脑 → Plan subagent → JSON tasks → Codex x N（并行） → 结果 → 下轮
@@ -9,20 +9,21 @@
 
 - **目标**：`*.imou.com`（授权范围），关注"垃圾漏洞"清单——安全头缺失、CORS/Self-XSS、版本号/方法名/类名泄露、账号/验证码爆破（见 `CLAUDE.md`）。
 - **架构**：纯 stdlib、零第三方依赖、Python ≥ 3.11；本地依赖 `claude` 与 `codex` 两个 CLI。
-- **状态**：单元测试 20 个全过；⚠️ **从未实跑过**，全链路待端到端验证。
+- **状态**：单元测试 42 个全过（40 ok + 2 跳过真实 CLI 门控）；已在授权目标上实跑（见 `../vulnhunt-runs`），产出真实 High/Medium 发现。
 
 ## 快速开始
 
 ```bash
 pip install -e .
 vulnhunt doctor                       # 检查 claude / codex 是否可用
-vulnhunt start "审计 imou.com 首页安全头配置"   # 先小目标试跑一轮
+vulnhunt start "审计 imou.com 开放设备 API 是否存在未授权访问"   # 先小目标试跑一轮
 ```
 
 ## 文档
 
 | 文档 | 内容 |
 |---|---|
+| [docs/rounds.md](docs/rounds.md) | 轮次制推进策略：信息收集轮 → 方向规划轮 → 利用深化轮，规划器定方向、黑板复用、任务聚焦 |
 | [docs/architecture.md](docs/architecture.md) | 深度架构设计：状态机、stream-json 规划捕获、codex 会话续跑、进程管理、落盘协议（源码级） |
 | [docs/usage.md](docs/usage.md) | 安装与命令、TUI 交互、运行产物目录、安全注意事项 |
 | [docs/configuration.md](docs/configuration.md) | 配置项对照表与 `VULNHUNT_*` 环境变量（含"声明但未使用"字段） |

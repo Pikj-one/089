@@ -2,11 +2,13 @@
 
 > 接手时如实记录的问题，全部经过源码核实（`src/vulnhunt/`）。**建议先处理有 ⭐ 的条目再投入使用**。修复方向仅供参考，动手前先在 [development.md](development.md) 找对应位置。
 
-## 1. ⭐ 从未实跑过 — 链路未端到端验证
+## 1. ✅ 已实跑 — 链路端到端跑通（2026-08-23）
 
-仓库里没有 `../vulnhunt-runs` 目录，Claude→Codex→报告全链路没有一次真实运行记录。单测只验证了各模块自身。
+`../vulnhunt-runs` 已有两次真实 run（`2026/08/23/14-17`、`2026/08/23/15-00`）：Claude→Codex→黑板→报告链路跑通，产出真实 High/Medium 发现（未授权文件上传、设备 API 令牌门控绕过、预认证辅助接口、注册状态 oracle 等）。
 
-**修复建议**：按 [usage.md](usage.md) 先 `doctor`，再以极小目标（如"检查 imou.com 首页安全头"）调低 `max_rounds`/`max_workers` 试跑一轮，验证产出完整（plans/tasks/logs/report 都有内容）。
+**遗留问题**（详见 §10）：
+- 两次 run 都在第 2 轮 PLANNING 崩溃且无错误记录——已给 `orchestrator.run_loop()` 加失败日志，待下次复现定位（怀疑与 claude 固定 `--session-id` 跨轮续上下文过大有关）。
+- 15-00 的 task_3 结果曾因 codex 在 JSON 前写解释文字导致解析失败、findings 全丢——已在 `codex.py` 用 `_extract_json` 修复。
 
 ## 2. ⭐ findings 不落盘
 

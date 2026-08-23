@@ -108,20 +108,17 @@ claude -p "" --output-format stream-json --include-partial-messages --verbose \
 
 ### 3.3 桥接协议（`src/vulnhunt/prompts.py`）
 
-`planner_prompt(goal, round_no, prior, workspace_root)` 生成喂给顶层 Claude 的提示词，内含：
+`planner_prompt(goal, round_no, prior, workspace_root, max_workers=10)` 生成喂给顶层 Claude 的提示词，按**三层角色**组织：
 
-- **输出期望**：顶层 Claude 只负责"桥接"与"排序"——Plan subagent 输出带 `depends_on` 的任务，顶层 Claude 按写死的规则算出每个任务的 `order`（无依赖→0；否则 `1 + max(依赖的 order)`；循环/悬空引用→0），输出**纯英文、纯 JSON** 的 `{"tasks":[{id,title,description,required_output?,relevant_context?,order}]}`，最终 JSON 不保留 `depends_on`。
-- **转发标记段**：`===开始===` 到 `===结束===`，要求顶层 Claude 原样转发给 Plan subagent，严禁增删。转发内容里包含：
+- **系统角色**：顶层 Claude（调度中枢）→ Plan subagent（规划器）→ codex（执行器/手）。顶层 Claude 职责固定为 3 步：① 读 run 目录复制的 `CLAUDE.md`，补全转发段中的占位符（授权范围、垃圾漏洞清单）；② 将 `===开始===` 到 `===结束===` 的内容**原样**转发给 Plan subagent（严禁增删改）；③ 按写死的 order 规则计算每个任务的 `order`，输出**纯英文、纯 JSON** 的 `{"tasks":[{id,title,description,required_output?,relevant_context?,order}]}`，最终 JSON 不保留 `depends_on`。
+- **order 规则**（顶层段）：无 `depends_on` 或引用非本轮任务→0；否则 `1 + max(依赖的 order)`；循环/悬空引用→0；`order` 越小越先、相同并行、依赖方 order 严格小于被依赖方。
+- **转发段（只写给 Plan subagent）**：`===开始===` 到 `===结束===`，包含——
   - 任务（漏洞挖掘规划）、类型（黑盒）、目的（Critical/High/Medium）；
-  - **`授权范围：{{这里由你填写}}` / `垃圾漏洞清单：{{这里有由你填写}}`** —— 占位符，由顶层 Claude 读取 run 目录里复制的 `CLAUDE.md` 后补全（机制依赖 `RunStore.create()` 的复制行为）；
+  - **`授权范围：{{这里由你填写}}` / `垃圾漏洞清单：{{这里由你填写}}`** —— 占位符，由顶层 Claude 读取 run 目录里复制的 `CLAUDE.md` 后补全（机制依赖 `RunStore.create()` 的复制行为）；
   - 唯一工作目录 = `workspace_root`（run 目录绝对路径），禁止越权访问父目录；
-  - 目标 / 当前轮次 / 上轮结果（prior，JSON 序列化回填）。
-- **大脑-手约束**：
-  - "codex 通过共享黑板目录交换公共资源/中间结果，黑板跨轮、跨 codex 保留；同一轮内 order 相同的任务并行（写黑板仍可能竞态），order 不同的任务顺序执行、可可靠读取前置任务写入黑板的中间结果"；
-  - "允许同轮依赖：Plan subagent 只规划并标注 `depends_on`（本轮任务 id 列表），不计算 order"；
-  - "第一轮你只会获得一个域名……严禁刻意子域名收集"；
-  - "你有十个 codex 但不是必须都给……简易任务和依赖前置任务的适当分配即可"；
-  - 注：超出 `max_workers`（默认 10）的 task 会被系统**直接丢弃不排队**（见 `known-gaps.md` 缺口 6 已解决）。
+  - 目标 / 当前轮次 / 上轮结果（prior，JSON 序列化回填）；
+  - **subagent 职责**：只规划并标注 `depends_on`（本轮任务 id 列表），**不计算 order**；
+  - **规划约束**：并发上限 `max_workers`（f-string 注入实际配置值，超出的 task 被系统直接丢弃不排队）；共享黑板路径 = `{workspace_root}/blackboard`（f-string 注入），跨轮、跨 codex 保留，codex 会写入抓取的原始资源与派生中间结果、先查黑板再下载（命名 `<工作目录名>_<原文件名>`）；同 order 并行写仍可能竞态、跨 order 顺序执行可靠读取前置中间结果；**去重规划**——多个任务依赖同一批基础资源时，先规划 order 最低的站点镜像任务写入黑板，分析任务 `depends_on` 它并从黑板读取；codex 内置完整工具链、一个 task 对应一个 codex；"第一轮你只会获得一个域名……严禁刻意子域名收集"；每轮返回上一轮执行结果。
 
 ### 3.4 日志
 
@@ -156,7 +153,8 @@ codex exec "" -C <workspace> --add-dir <blackboard> --json -o <workspace>/_last_
 - `--json -o _last_message.json`：codex 把最终回复写成 JSON 文件，vulnhunt 再轮询读取。
 - 任务提示词（模板内嵌）严格约束：
   - 要求输出 `status`（SUCCESS/FAILURE/PARTIAL）+ `summary` + `findings` 的**纯 JSON**；
-  - 需要供其他 codex 复用的公共资源/中间结果**只能写入黑板目录**；私有产物**只允许写本任务 workspace**，禁止 `..`、绝对路径、访问 tasks/logs/findings/report/其他任务目录；
+  - **共享黑板契约**：抓取的可复用原始资源（页面/JS 包/robots.txt/响应头/API 响应）与派生中间结果**必须写入黑板**，命名规范 `<工作目录名>_<原文件名>`（如 `round_001_task_2_umi.js`）；**下载前先查黑板**，已有同名/同 URL 资源直接复用、禁止重复下载；私有产物（脚本、临时文件、最终 JSON 报告、截图）只写本任务 workspace；
+  - 路径限制：本任务只允许访问 workspace 与共享黑板目录，禁止 `..`、绝对路径、访问 tasks/logs/findings/report/其他任务目录；
   - "任务完成时结束所有产生的子进程"。
 
 ### 4.3 会话续跑

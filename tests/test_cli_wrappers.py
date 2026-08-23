@@ -131,5 +131,41 @@ class WrapperUnitTests(unittest.TestCase):
         self.assertEqual(captured['args'][captured['args'].index("--add-dir") + 1], blackboard)
         self.assertIn(blackboard, captured['prompt'])
 
+    def test_codex_prompt_enforces_blackboard_contract(self):
+        captured = {}
+
+        def fake_process(args, cwd=None, **kwargs):
+            captured['prompt'] = kwargs.get('input_text', '')
+            output_file = Path(args[args.index("-o") + 1])
+            output_file.write_text(json.dumps({"status": "SUCCESS", "summary": "ok", "findings": []}), encoding="utf-8")
+            return ProcResult(0, "", "")
+
+        with tempfile.TemporaryDirectory() as d, patch("vulnhunt.cli.codex.run_process", side_effect=fake_process):
+            store = RunStore.create(d, Run("r1", "audit", "now"))
+            workspace = store.root / "workspaces" / "round_001_task_1"
+            workspace.mkdir(parents=True)
+            CodexWrapper(Config(), store=store).exec_task(TaskSpec("task_1", "test", "test"), workspace)
+
+        prompt = captured['prompt']
+        self.assertIn("共享黑板契约", prompt)
+        self.assertIn("下载前先查黑板", prompt)
+        self.assertIn("round_001_task_1_umi.js", prompt)  # 命名规范带工作目录名前缀
+        self.assertIn("禁止重复下载", prompt)
+        self.assertIn("禁止访问或写入任何其他路径", prompt)
+
+    def test_codex_prompt_without_blackboard_has_no_contract(self):
+        captured = {}
+
+        def fake_process(args, cwd=None, **kwargs):
+            captured['prompt'] = kwargs.get('input_text', '')
+            output_file = Path(args[args.index("-o") + 1])
+            output_file.write_text(json.dumps({"status": "SUCCESS", "summary": "ok", "findings": []}), encoding="utf-8")
+            return ProcResult(0, "", "")
+
+        with tempfile.TemporaryDirectory() as d, patch("vulnhunt.cli.codex.run_process", side_effect=fake_process):
+            CodexWrapper(Config()).exec_task(TaskSpec("task_1", "test", "test"), Path(d))
+
+        self.assertNotIn("共享黑板契约", captured['prompt'])
+
 
 if __name__ == "__main__": unittest.main()

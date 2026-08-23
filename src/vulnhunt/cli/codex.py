@@ -13,15 +13,26 @@ class CodexWrapper:
         # 黑板目录：所有 codex 共享、跨轮保留；仅 store 存在时才启用。
         blackboard=(self.store.root/'blackboard').resolve() if self.store else None
         if blackboard: blackboard.mkdir(parents=True,exist_ok=True)
-        blackboard_line=f"共享黑板目录（所有 codex 共享、跨轮保留）：{blackboard}\n\n" if blackboard else ""
         bb_scope="与共享黑板目录" if blackboard else ""
+        name_tag=workspace.name
+        blackboard_contract=(
+            f"""## 共享黑板契约（必须遵守）
+共享黑板目录：{blackboard}，所有 codex 共享、跨轮保留，可直接读写。
+1. 从网络抓取的**可复用**原始资源（首页/页面 HTML、JS/CSS 包、robots.txt、HTTP 响应头、API 文档/响应等）与派生的公共中间结果（端点清单、指纹报告、路由/账号清单等）属于**共享资源**，必须写入共享黑板，命名规范 `{name_tag}_<原文件名>`（如 `{name_tag}_umi.js`），不要写进本任务工作目录。
+2. **下载前先查黑板**：黑板上已存在同名/同 URL 的资源时，直接从黑板读取复用，禁止重复下载。
+3. 本任务工作目录只存放私有产物：仅供本任务单次使用的抓取、分析脚本、临时文件、本任务最终 JSON 报告、截图。
+
+"""
+            if blackboard else ""
+        )
         prompt = rf"""任务：{task.description}
 要求输出：{task.required_output}
 相关上下文：{task.relevant_context or '无'}
 本任务工作目录：{workspace}
-{blackboard_line}任务完成时结束所有产生的子进程
+{blackboard_contract}任务完成时结束所有产生的子进程
 
-严格限制：需要供其他 codex 复用的公共资源/中间结果可以写入共享黑板目录及其子目录；本任务的临时目录、脚本、报告、截图、响应等私有产物只能写入本任务工作目录。禁止访问或写入本任务工作目录{bb_scope}之外的任何路径，包括运行目录、tasks、logs、findings、report、其他任务目录、项目目录和用户目录。禁止使用 ..、切换到其他目录或通过绝对路径绕过限制。
+## 路径限制
+本任务只允许访问本任务工作目录{bb_scope}。禁止访问或写入任何其他路径，包括运行目录、tasks、logs、findings、report、其他任务目录、项目目录和用户目录。禁止使用 ..、切换到其他目录或通过绝对路径绕过限制。
 
 请严格只输出一个 JSON 对象，不要输出 Markdown、解释文字或额外内容。
 字段必须包含 status、summary、findings；status 使用 SUCCESS、FAILURE 或 PARTIAL。"""

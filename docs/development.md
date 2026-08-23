@@ -36,8 +36,10 @@ PYTHONPATH=src python -m unittest discover tests -v   # 跑测试
 
 在 `planner_prompt()` 里改。注意三点契约：
 1. 顶层 Claude 输出必须是**纯 JSON** `{"tasks":[...]}`，系统靠它解析；
-2. `===转发内容从这开始===` 到 `===转发内容到这结束===` 之间会被原样转发给 Plan subagent，禁止在此加"给顶层 Claude 的命令"；
-3. `{{这里由你填写}}` 占位符由顶层 Claude 读 run 目录复制的 `CLAUDE.md` 补全——如果新增了需要注入的上下文，优先用 Python 字符串插值（如 `{workspace_root}`），而不是再加占位符。
+2. `===开始===` 到 `===结束===` 之间会被原样转发给 Plan subagent，禁止在此加"给顶层 Claude 的命令"；
+3. `{{这里由你填写}}` 占位符由顶层 Claude 读 run 目录复制的 `CLAUDE.md` 补全——如果新增了需要注入的上下文，优先用 Python 字符串插值（如 `{workspace_root}`、`{max_workers}`、`{blackboard}`），而不是再加占位符。
+
+给 codex 的提示词在 `src/vulnhunt/cli/codex.py` 的 `exec_task()` 内拼装，含**共享黑板契约**：抓取的可复用原始资源/派生中间结果必须写黑板（命名 `<工作目录名>_<原文件名>`）、下载前先查黑板再复用、私有产物只写 workspace。改动时保持纯 JSON 输出契约（status/summary/findings）。
 
 ### 3.2 加一个 TUI 命令
 

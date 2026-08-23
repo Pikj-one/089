@@ -35,11 +35,13 @@
 
 ## 6. ✅ 提示词与实际行为不符 — 已解决
 
-`prompts.py` 声称"超出十个的 task 会被系统默认丢弃不会排队"，此前 `workers.py` 用 `ThreadPoolExecutor` **把全部 task 排队执行完**（仅并发上限 max_workers）。
+`prompts.py` 曾写"超出十个的 task 会被系统默认丢弃不会排队"（重构后改为 f-string 注入实际 `max_workers`），此前 `workers.py` 用 `ThreadPoolExecutor` **把全部 task 排队执行完**（仅并发上限 max_workers）。
 
 已实现丢弃（2026-08-23）：`WorkerPool.run()` 只取前 `max_workers` 个任务执行，超出的直接丢弃不排队，并写入 `logs/round_<NNN>.log` 记录被丢弃的任务 ID，便于追踪与下一轮重新规划。
 
 同轮依赖语义（2026-08-23 更新）：原"同一轮任务禁止隐式依赖"规则已移除，改为 `order` 控制——Plan subagent 标注 `depends_on`、顶层 Claude 计算 `order`、`WorkerPool` 按 order 分波执行（同 order 并行、跨波次顺序执行）。整轮封顶仍在 order 分组之前生效，被丢弃任务若被其他任务 `depends_on`，其依赖方可能读到空黑板（已知边界）。
+
+去重（2026-08-23）：同 order 并行任务若都抓取同一批基础资源（页面/JS 包）会各自重复下载——首波黑板为空，"先查黑板"无法避免，需规划侧先安排 order 最低的站点镜像任务写入黑板、分析任务 `depends_on` 它。这依赖模型自觉；若仍出现重复抓取，需在 `codex.py` 提示词或规划规则再强化。
 
 ## 7. 授权范围是占位符而非硬编码
 

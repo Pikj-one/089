@@ -2,6 +2,20 @@ import json, time
 from pathlib import Path
 from .base import run_process, resolve_executable
 from ..models import WorkerResult, TaskResultStatus
+
+
+def _extract_json(raw):
+    """codex 可能在 JSON 前/后写解释文字：取第一个 { 到最后一个 } 之间的子串再解析。"""
+    if not raw:
+        return None
+    s = raw.strip()
+    start = s.find('{')
+    end = s.rfind('}')
+    if start < 0 or end <= start:
+        return None
+    return s[start:end + 1]
+
+
 class CodexWrapper:
     def __init__(self,config,logger=None,store=None): self.config=config; self.logger=logger or (lambda component,message: None); self.cancel_event=None; self.store=store
     def health_check(self): return run_process([resolve_executable([self.config.codex_exec]),'--version'],timeout_s=20).exit_code==0
@@ -60,8 +74,9 @@ class CodexWrapper:
             for _ in range(20):
                 try:
                     raw=p.read_text(encoding='utf-8').strip()
-                    if raw:
-                        d=json.loads(raw); d['task_id']=task.id; result=WorkerResult.from_dict(d); break
+                    body=_extract_json(raw) if raw else None
+                    if body:
+                        d=json.loads(body); d['task_id']=task.id; result=WorkerResult.from_dict(d); break
                 except (OSError, json.JSONDecodeError):
                     time.sleep(0.05)
         if result is None:

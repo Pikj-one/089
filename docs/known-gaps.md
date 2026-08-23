@@ -60,3 +60,9 @@
 `resume` 命令与中断后续跑逻辑只有状态重建测试，真实运行风险未验证。注意语义：RUNNING 中断后 resume 会**重跑整轮当前 plan**（不会跳过已完成任务），`Workspace` 里已有 `.codex_session` 的任务会续跑会话，但本轮未完成任务的探测动作会重复执行。
 
 **修复建议**：实跑一次中断→resume 全流程；如希望"跳过已完成任务"，需要在 WorkerPool 里先读磁盘已有的 `tasks/<tid>_result.json` 再决定是否重派。
+
+## 10. ✅ codex 结果解析容错 + 轮次阶段提示词 — 已解决（2026-08-23）
+
+- **codex 结果解析**：codex 会在 `_last_message.json` 的 JSON 前写解释文字（实测 `All work complete. Final report written to ...`），原 `json.loads(raw)` 直接失败 → 20 次轮询全败 → 任务被标 FAILURE、findings 全部丢失（一次真实 run 的 task_3 因此丢掉全部 High 发现）。已修复：`cli/codex.py` 新增 `_extract_json()`，取第一个 `{` 到最后一个 `}` 的子串再解析。
+- **轮次阶段提示词**：`prompts.py` 转发段新增「轮次阶段」规则——第 1 轮信息收集轮（严禁漏洞探测类任务）、第 2 轮方向规划轮（规划器直接定方向，不设单独方向分析 codex）、第 3 轮起利用深化轮（每轮 1~3 个方向）；禁止"测试所有漏洞类型"这类塞满全链路的巨型任务。
+- **待复现**：两次真实 run 都在第 2 轮 PLANNING 崩溃且无任何错误记录。已给 `orchestrator.run_loop()` 的异常分支加日志（`logs/round_<NNN>.log` 写 `run failed: <异常>`）；下次复现即可定位。怀疑与 claude 固定 `--session-id` 跨轮续上下文过大有关，待确认后单独处理。

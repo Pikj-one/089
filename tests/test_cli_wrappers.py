@@ -90,6 +90,22 @@ class WrapperUnitTests(unittest.TestCase):
             result = CodexWrapper(Config()).exec_task(TaskSpec("task_1", "test", "test"), Path(d))
         self.assertEqual(result.status, TaskResultStatus.SUCCESS)
 
+    def test_codex_wrapper_tolerates_text_preamble(self):
+        # codex 会在 JSON 前写解释文字（如 "All work complete..."），必须剥离后再解析，否则 findings 全丢。
+        def fake_process(args, cwd=None, **kwargs):
+            output_file = Path(args[args.index("-o") + 1])
+            output_file.write_text(
+                "All work complete. Final report written to `blackboard/task_1_findings.json`, subprocesses cleaned up.\n\n"
+                + json.dumps({"status": "PARTIAL", "summary": "ok", "findings": [{"id": "F1"}]}),
+                encoding="utf-8",
+            )
+            return ProcResult(0, "", "")
+
+        with tempfile.TemporaryDirectory() as d, patch("vulnhunt.cli.codex.run_process", side_effect=fake_process):
+            result = CodexWrapper(Config()).exec_task(TaskSpec("task_1", "test", "test"), Path(d))
+        self.assertEqual(result.status, TaskResultStatus.PARTIAL)
+        self.assertEqual(result.findings, [{"id": "F1"}])
+
     def test_codex_wrapper_resolves_relative_workspace(self):
         captured = {}
 

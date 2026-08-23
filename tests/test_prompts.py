@@ -46,5 +46,16 @@ class PromptContractTests(unittest.TestCase):
         self.assertIn("站点镜像", prompt)
         self.assertIn("不要重新下载", prompt)
 
+    def test_round_phase_rules(self):
+        prompt = planner_prompt("audit", 1, [], ".")
+        self.assertIn("信息收集轮", prompt)
+        self.assertIn("方向规划轮", prompt)
+        self.assertIn("利用深化轮", prompt)
+        self.assertIn("严禁规划任何漏洞探测", prompt)
+        self.assertIn("不要设单独的方向分析 codex 任务", prompt)
+        self.assertIn("一个任务只聚焦一个方向", prompt)
+        self.assertIn("当前轮次：1", prompt)
+        self.assertIn("当前轮次：2", planner_prompt("audit", 2, [], "."))
+
 
 if __name__ == "__main__": unittest.main()

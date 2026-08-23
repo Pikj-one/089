@@ -15,8 +15,10 @@ class Orchestrator:
         try:
             while self.run.status not in (RunStatus.COMPLETE,RunStatus.FAILED,RunStatus.ABORTED): self.step()
         except KeyboardInterrupt: self.run.status=RunStatus.ABORTED; self.save()
-        except Exception:
+        except Exception as e:
             self.run.status=RunStatus.ABORTED if self._abort.is_set() else RunStatus.FAILED
+            if self.store:
+                self.store.append_log(f'round_{self.run.current_round:03d}.log', f'run failed: {type(e).__name__}: {e}')
             self.save()
         return self.run
     def request_abort(self): self._abort.set()

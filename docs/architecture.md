@@ -40,7 +40,7 @@ start (main.py)
        │                ├─ 捕获 stream-json 里的 input_json_delta 拼装出完整 JSON
        │                └─ 存 plans/round_NNN_plan.json
        ├─ DISPATCHING → RUNNING
-       ├─ RUNNING      WorkerPool：ThreadPoolExecutor(max_workers) 并行
+        ├─ RUNNING      WorkerPool：按 order 分波执行（同波 ThreadPoolExecutor 并行）
        │                ├─ 每任务一个 workspaces/round_NNN_<taskid>/ 目录
        │                ├─ CodexWrapper.exec_task()：`codex exec -C <workspace> ...`
        │                ├─ codex 写回 _last_message.json（status/summary/findings）
@@ -110,14 +110,15 @@ claude -p "" --output-format stream-json --include-partial-messages --verbose \
 
 `planner_prompt(goal, round_no, prior, workspace_root)` 生成喂给顶层 Claude 的提示词，内含：
 
-- **输出期望**：顶层 Claude 只负责"桥接"，必须输出**纯英文、纯 JSON** 的 `{"tasks":[{id,title,description,required_output?,relevant_context?}]}`，系统据此解析后派发。
-- **转发标记段**：`===转发内容从这开始===` 到 `===转发内容到这结束===`，要求顶层 Claude 原样转发给 Plan subagent，严禁增删。转发内容里包含：
+- **输出期望**：顶层 Claude 只负责"桥接"与"排序"——Plan subagent 输出带 `depends_on` 的任务，顶层 Claude 按写死的规则算出每个任务的 `order`（无依赖→0；否则 `1 + max(依赖的 order)`；循环/悬空引用→0），输出**纯英文、纯 JSON** 的 `{"tasks":[{id,title,description,required_output?,relevant_context?,order}]}`，最终 JSON 不保留 `depends_on`。
+- **转发标记段**：`===开始===` 到 `===结束===`，要求顶层 Claude 原样转发给 Plan subagent，严禁增删。转发内容里包含：
   - 任务（漏洞挖掘规划）、类型（黑盒）、目的（Critical/High/Medium）；
   - **`授权范围：{{这里由你填写}}` / `垃圾漏洞清单：{{这里有由你填写}}`** —— 占位符，由顶层 Claude 读取 run 目录里复制的 `CLAUDE.md` 后补全（机制依赖 `RunStore.create()` 的复制行为）；
   - 唯一工作目录 = `workspace_root`（run 目录绝对路径），禁止越权访问父目录；
   - 目标 / 当前轮次 / 上轮结果（prior，JSON 序列化回填）。
 - **大脑-手约束**：
-  - "codex 通过共享黑板目录交换公共资源/中间结果，黑板跨轮、跨 codex 保留；同一轮内并行任务互不依赖（仅跨轮可靠）"；
+  - "codex 通过共享黑板目录交换公共资源/中间结果，黑板跨轮、跨 codex 保留；同一轮内 order 相同的任务并行（写黑板仍可能竞态），order 不同的任务顺序执行、可可靠读取前置任务写入黑板的中间结果"；
+  - "允许同轮依赖：Plan subagent 只规划并标注 `depends_on`（本轮任务 id 列表），不计算 order"；
   - "第一轮你只会获得一个域名……严禁刻意子域名收集"；
   - "你有十个 codex 但不是必须都给……简易任务和依赖前置任务的适当分配即可"；
   - 注：超出 `max_workers`（默认 10）的 task 会被系统**直接丢弃不排队**（见 `known-gaps.md` 缺口 6 已解决）。
@@ -137,7 +138,7 @@ with ThreadPoolExecutor(max_workers=self.config.max_workers) as pool:
     return list(pool.map(one, tasks))
 ```
 
-- `pool.map` 保序返回，但任务是并发执行的。
+- 保留任务按 `order` 升序**稳定排序**后分组：同一 order 一波，波内 `ThreadPoolExecutor(max_workers)` 并行；`pool.map` 返回即本波全部完成，形成**波间同步屏障**，后一波才启动。结果按波次顺序拼接（波内保序）。
 - **超出 `max_workers` 的 task 直接丢弃**——只执行前 `max_workers` 个，不排队；被丢弃的任务 ID 记录在 `logs/round_<NNN>.log`，供下一轮重新规划。
 - 每个 task 的 workspace：`<run_dir>/workspaces/round_<NNN>_<task_id>/`，`exec_task` 内 `mkdir`。
 - 任务输入先落盘 `tasks/<tid>_input.json`；结果由 `exec_task` 返回后落盘 `tasks/<tid>_result.json`。
@@ -224,7 +225,7 @@ def _write(self, name, obj):
 | 决策 | 理由 | 代价 |
 |---|---|---|
 | 子进程而非 in-process 调用 LLM | 隔离、可强杀、复用成熟 CLI | 协议对接复杂（stream-json 解析） |
-| Codex 任务间通过黑板共享中间结果 | 复用公共资源/中间结果、跨轮保留 | 同轮并行写黑板有竞态（仅跨轮可靠），共享区靠提示词约束 |
+| Codex 任务间通过黑板共享中间结果 + order 分波 | 复用公共资源/中间结果、跨轮保留；同轮跨波次依赖可靠 | 同 order 并行写黑板仍有竞态，共享区靠提示词约束 |
 | Claude 固定 session-id | 跨轮延续规划上下文 | 长 run 上下文成本持续累积 |
 | 每任务独立 workspace + 会话续跑 | 断点续跑、故障隔离 | 磁盘占用、需要 .codex_session 机制 |
 | 纯 stdlib、零依赖 | 部署即用、无供应链面 | 一切轮子自己造（TUI、渲染、并发） |

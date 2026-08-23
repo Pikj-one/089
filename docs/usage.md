@@ -95,6 +95,6 @@ vulnhunt-runs/2026/08/22/14-30/abc123def456/
 
 - **仅对授权范围（`*.imou.com`）使用**。工具会向目标发送主动请求，且规划目标含"账号、验证码爆破"类任务，无授权使用可能违法。
 - 顶层 Claude 以 `--permission-mode bypassPermissions` 运行、codex 以 `-s danger-full-access` 沙箱运行，**请勿在目标之外的环境中误触发**。
-- Codex 任务 prompt 严格限制只写本任务 workspace（禁止 `..` / 绝对路径绕过），但这是**提示词约束而非强隔离**——若信任边界敏感，需额外加固。
+- Codex 任务 prompt 严格限制只写本任务 workspace 与共享黑板目录（禁止 `..` / 绝对路径绕过），但这是**提示词约束而非强隔离**——若信任边界敏感，需额外加固。
 - 真实 CLI 测试（`VULNHUNT_REAL_TESTS=1`）会真实调用模型并可能发请求，谨慎开启。
 - `workspaces/`、`logs/` 与 `blackboard/` 里可能残留 codex 抓取的页面、响应、token 类中间数据；黑板内容跨轮保留，交付/归档前请一并清理。

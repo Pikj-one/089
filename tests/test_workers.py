@@ -46,5 +46,16 @@ class WorkerPoolTests(unittest.TestCase):
             self.assertEqual(len(results), 3)
             self.assertFalse((store.root / "logs/round_001.log").exists())
 
+    def test_executes_tasks_by_order_waves(self):
+        with tempfile.TemporaryDirectory() as d:
+            config = Config(runs_root=d, max_workers=4)
+            store = RunStore.create(d, Run("r3", "audit", "now"))
+            codex = CountingCodex()
+            tasks = [TaskSpec(f"task_{i}", f"t{i}", "desc", order=order) for i, order in enumerate([0, 1, 0, 1])]
+            results = WorkerPool(config, codex, store).run(tasks, 1)
+            self.assertEqual(len(results), 4)
+            self.assertEqual(set(codex.calls[:2]), {"task_0", "task_2"})
+            self.assertEqual(set(codex.calls[2:]), {"task_1", "task_3"})
+
 
 if __name__ == "__main__": unittest.main()

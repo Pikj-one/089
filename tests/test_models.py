@@ -11,6 +11,15 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(restored.tasks[0].id, "task_1")
         self.assertEqual(restored.round, 1)
 
+    def test_task_order_roundtrip(self):
+        task = TaskSpec("task_1", "scan", "scan it", order=2)
+        restored = TaskSpec.from_dict(task.to_dict())
+        self.assertEqual(restored.order, 2)
+
+    def test_task_order_defaults_to_zero(self):
+        task = TaskSpec.from_dict({"id": "task_1", "title": "scan", "description": "scan it"})
+        self.assertEqual(task.order, 0)
+
     def test_result_roundtrip(self):
         result = WorkerResult("x", summary="ok")
         self.assertEqual(WorkerResult.from_dict(result.to_dict()).summary, "ok")

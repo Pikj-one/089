@@ -39,6 +39,8 @@
 
 已实现丢弃（2026-08-23）：`WorkerPool.run()` 只取前 `max_workers` 个任务执行，超出的直接丢弃不排队，并写入 `logs/round_<NNN>.log` 记录被丢弃的任务 ID，便于追踪与下一轮重新规划。
 
+同轮依赖语义（2026-08-23 更新）：原"同一轮任务禁止隐式依赖"规则已移除，改为 `order` 控制——Plan subagent 标注 `depends_on`、顶层 Claude 计算 `order`、`WorkerPool` 按 order 分波执行（同 order 并行、跨波次顺序执行）。整轮封顶仍在 order 分组之前生效，被丢弃任务若被其他任务 `depends_on`，其依赖方可能读到空黑板（已知边界）。
+
 ## 7. 授权范围是占位符而非硬编码
 
 `prompts.py` 的 `授权范围：{{这里由你填写}}` 不硬编码 imou.com，靠运行时顶层 Claude 读取 run 目录复制的 `CLAUDE.md` 自行补全（`RunStore.create()` 的复制行为是前提）。

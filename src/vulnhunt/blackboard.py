@@ -23,10 +23,6 @@ _BANNED_SUFFIXES = {
 _HEADER_DUMP_NAME_HINTS = ("headers.txt", "_headers.txt", "-headers.txt", ".headers")
 # 响应头 dump 内容启发式：绝大多数非空行形如 "Key: value"
 _HEADER_LINE = re.compile(r"^[A-Za-z0-9_-]+\s*:")
-# 超过此字节数的 .js（例如压缩后的整包）不做 Prettier 格式化，避免耗时与膨胀
-_PRETTIER_MAX_BYTES = 1_000_000
-
-
 def _is_header_dump(path: Path) -> bool:
     name = path.name.lower()
     if name == "robots.txt":
@@ -76,10 +72,10 @@ def sanitize_blackboard(blackboard, logger=None):
     return removed
 
 
-def format_blackboard_js(blackboard, logger=None, max_bytes=_PRETTIER_MAX_BYTES):
+def format_blackboard_js(blackboard, max_bytes, logger=None):
     """对黑板上未压缩的小型 .js 文件用 Prettier 静默格式化。
 
-    - 跳过超过 max_bytes 的文件（压缩整包）与换行极少的压缩产物。
+    - 跳过超过 max_bytes 的文件（压缩整包）与换行极少的压缩产物；阈值由 Config.prettier_max_bytes（config.toml）提供，代码不兜底。
     - 用 `prettier --write` 就地格式化；prettier 不存在或失败时静默忽略。
     - 返回成功格式化的文件数。
     """

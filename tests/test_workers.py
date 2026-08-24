@@ -1,7 +1,7 @@
 import sys, tempfile, unittest
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
-from vulnhunt.config import Config
+from fakes import config as make_config
 from vulnhunt.models import Run, TaskSpec, WorkerResult
 from vulnhunt.state import RunStore
 from vulnhunt.workers import WorkerPool
@@ -22,7 +22,7 @@ class WorkerPoolTests(unittest.TestCase):
 
     def test_drops_tasks_beyond_max_workers(self):
         with tempfile.TemporaryDirectory() as d:
-            config = Config(runs_root=d, max_workers=2)
+            config = make_config(runs_root=d, max_workers=2)
             store = RunStore.create(d, Run("r1", "audit", "now"))
             codex = CountingCodex()
             tasks = [TaskSpec(f"task_{i}", f"t{i}", "desc") for i in range(5)]
@@ -38,7 +38,7 @@ class WorkerPoolTests(unittest.TestCase):
 
     def test_no_drop_when_within_limit(self):
         with tempfile.TemporaryDirectory() as d:
-            config = Config(runs_root=d, max_workers=3)
+            config = make_config(runs_root=d, max_workers=3)
             store = RunStore.create(d, Run("r2", "audit", "now"))
             codex = CountingCodex()
             tasks = [TaskSpec(f"task_{i}", f"t{i}", "desc") for i in range(3)]
@@ -48,7 +48,7 @@ class WorkerPoolTests(unittest.TestCase):
 
     def test_executes_tasks_by_order_waves(self):
         with tempfile.TemporaryDirectory() as d:
-            config = Config(runs_root=d, max_workers=4)
+            config = make_config(runs_root=d, max_workers=4)
             store = RunStore.create(d, Run("r3", "audit", "now"))
             codex = CountingCodex()
             tasks = [TaskSpec(f"task_{i}", f"t{i}", "desc", order=order) for i, order in enumerate([0, 1, 0, 1])]

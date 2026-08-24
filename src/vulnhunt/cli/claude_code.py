@@ -20,7 +20,7 @@ class ClaudeWrapper:
 
     def plan(self,goal,round_no,prior,work_dir):
         work_dir=Path(work_dir).resolve()
-        prompt=planner_prompt(goal,round_no,slim_prior(prior),work_dir,self.config.max_workers)
+        prompt=planner_prompt(goal,round_no,slim_prior(prior),work_dir,max_workers=self.config.max_workers,max_rounds=self.config.max_rounds)
 
         def apply(action):
             if isinstance(action, LogAction): self.logger(action.component, action.message)

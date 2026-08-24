@@ -72,7 +72,7 @@ class BlackboardPrettierTests(unittest.TestCase):
         if not self.has_prettier:
             self.skipTest("prettier 未安装")
         (self.dir / "x.js").write_text("const a={b:1};\nfunction f(){return 1+2;}\n")
-        format_blackboard_js(self.dir)
+        format_blackboard_js(self.dir, 1_000_000)
         self.assertTrue((self.dir / "x.js").read_text().startswith("const a = { b: 1 };"))
 
     def test_skips_minified_and_oversized(self):
@@ -80,7 +80,7 @@ class BlackboardPrettierTests(unittest.TestCase):
         orig = "// c\n" + "const zz=" + "a" * 100_000 + ";\n"  # 100KB 压缩 -> 跳过
         (self.dir / "minified.js").write_text(orig)
         (self.dir / "big.js").write_text("// l\n" * 2 + "x" * 2_000_000 + "\n")  # 2MB -> 跳过
-        format_blackboard_js(self.dir)
+        format_blackboard_js(self.dir, 1_000_000)
         self.assertTrue((self.dir / "mini.js").read_text().startswith("const a = 1;"))
         self.assertEqual((self.dir / "minified.js").read_text(), orig)
         self.assertGreater((self.dir / "big.js").stat().st_size, 1_000_000)

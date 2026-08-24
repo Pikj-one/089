@@ -49,6 +49,14 @@ class CodexWrapper:
 ## 路径限制
 本任务只允许访问本任务工作目录{bb_scope}。禁止访问或写入任何其他路径，包括运行目录、tasks、logs、findings、report、其他任务目录、项目目录和用户目录。禁止使用 ..、切换到其他目录或通过绝对路径绕过限制。
 
+## 安全边界（硬性约束，即使任务描述要求更激进也必须遵守）
+你只证明漏洞存在并产出证据，不执行任何会造成实际危害的操作：
+- 只读验证：禁止 DELETE / DROP / TRUNCATE / INSERT / UPDATE / ALTER、文件删除或覆盖、写入后门、创建持久化访问入口等破坏性动作。
+- 数据类漏洞（SQL 注入、任意文件读等）：只证明漏洞存在（报错回显、布尔/时间盲注、探测返回结构），禁止读取、导出或回传真实业务数据（表数据、用户凭据、个人隐私）。
+- 爆破 / 枚举：控制速率并设尝试次数上限，达到上限即停止，避免触发账号锁定或服务过载。
+- 目标范围：只对任务描述涉及的目标主机与端点发起请求；禁止请求任务范围外的任何主机、域名或 IP。
+- 结束后不留后门、不留持久化进程、不留目标侧痕迹。
+
 请严格只输出一个 JSON 对象，不要输出 Markdown、解释文字或额外内容。
 字段必须包含 status、summary、findings；status 使用 SUCCESS、FAILURE 或 PARTIAL。"""
         exe=resolve_executable([self.config.codex_exec]); output_file=Path(workspace)/'_last_message.json'; session_file=Path(workspace)/'.codex_session'; session_id=session_file.read_text(encoding='utf-8').strip() if session_file.exists() else ''; log_file=f'codex_{task.id}.jsonl'
@@ -90,5 +98,5 @@ class CodexWrapper:
         if blackboard:
             from ..blackboard import sanitize_blackboard, format_blackboard_js
             sanitize_blackboard(blackboard, self.logger)
-            format_blackboard_js(blackboard, self.logger)
+            format_blackboard_js(blackboard, self.config.prettier_max_bytes, self.logger)
         return result

@@ -2,7 +2,7 @@ import json, sys, tempfile, unittest
 from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
-from vulnhunt.config import Config
+from fakes import config as make_config
 from vulnhunt.models import TaskSpec, TaskResultStatus, Run
 from vulnhunt.state import RunStore
 from vulnhunt.cli.base import ProcResult
@@ -18,7 +18,7 @@ class WrapperUnitTests(unittest.TestCase):
     def test_claude_wrapper_parses_plan_json(self):
         output = _plan_output([{"id": "task_1", "title": "scan", "description": "scan it"}])
         with patch("vulnhunt.cli.claude_code.run_process", return_value=ProcResult(0, output, "")):
-            plan = ClaudeWrapper(Config()).plan("audit", 1, [], ".")
+            plan = ClaudeWrapper(make_config()).plan("audit", 1, [], ".")
         self.assertEqual(plan.tasks[0].id, "task_1")
 
     def test_claude_wrapper_computes_orders_from_depends_on(self):
@@ -29,7 +29,7 @@ class WrapperUnitTests(unittest.TestCase):
             {"id": "exploit", "title": "利用", "description": "深挖", "depends_on": ["analyze"]},
         ])
         with patch("vulnhunt.cli.claude_code.run_process", return_value=ProcResult(0, output, "")):
-            plan = ClaudeWrapper(Config()).plan("audit", 1, [], ".")
+            plan = ClaudeWrapper(make_config()).plan("audit", 1, [], ".")
         by_id = {t.id: t for t in plan.tasks}
         self.assertEqual([by_id["mirror"].order, by_id["analyze"].order, by_id["exploit"].order], [0, 1, 2])
         self.assertTrue(all(t.depends_on == [] for t in plan.tasks))
@@ -45,7 +45,7 @@ class WrapperUnitTests(unittest.TestCase):
             return ProcResult(0, _plan_output([{"id": "task_1", "title": "s", "description": "s"}]), "")
 
         with patch("vulnhunt.cli.claude_code.run_process", side_effect=fake_process):
-            ClaudeWrapper(Config()).plan("audit", 2, fat_prior, ".")
+            ClaudeWrapper(make_config()).plan("audit", 2, fat_prior, ".")
         self.assertNotIn("XXXX", captured['prompt'])
         self.assertIn('"summary": "ok"', captured['prompt'])
         # 落盘契约不受影响：slim_prior 是纯函数，原 dict 不被修改
@@ -75,7 +75,7 @@ class WrapperUnitTests(unittest.TestCase):
 
         logs = []
         with patch("vulnhunt.cli.claude_code.run_process", side_effect=fake_process):
-            wrapper = ClaudeWrapper(Config(), logger=lambda component, message: logs.append((component, message)))
+            wrapper = ClaudeWrapper(make_config(), logger=lambda component, message: logs.append((component, message)))
             wrapper.session_id = "old-session"  # 模拟第 2 轮复用既有会话
             plan = wrapper.plan("audit", 2, [], ".")
 
@@ -95,7 +95,7 @@ class WrapperUnitTests(unittest.TestCase):
             return ProcResult(0, _plan_output([{"id": "task_1", "title": "scan", "description": "scan it"}]), "")
 
         with patch("vulnhunt.cli.claude_code.run_process", side_effect=fake_process):
-            wrapper = ClaudeWrapper(Config())
+            wrapper = ClaudeWrapper(make_config())
             wrapper.session_id = "kept-session"
             plan = wrapper.plan("audit", 2, [], ".")
 
@@ -110,7 +110,7 @@ class WrapperUnitTests(unittest.TestCase):
     def test_claude_wrapper_round1_creates_new_session(self):
         # 首轮无既有会话：仍用 --session-id 新建。
         with patch("vulnhunt.cli.claude_code.run_process", return_value=ProcResult(0, _plan_output([{"id": "task_1", "title": "scan", "description": "scan it"}]), "")) as m:
-            ClaudeWrapper(Config()).plan("audit", 1, [], ".")
+            ClaudeWrapper(make_config()).plan("audit", 1, [], ".")
         args = m.call_args[0][0]
         self.assertIn("--session-id", args)
         self.assertNotIn("--resume", args)
@@ -119,11 +119,11 @@ class WrapperUnitTests(unittest.TestCase):
         # 首轮（无既有会话可续）失败不应重试，直接抛错暴露原因。
         with patch("vulnhunt.cli.claude_code.run_process", return_value=ProcResult(-1, "", "boom")):
             with self.assertRaises(RuntimeError):
-                ClaudeWrapper(Config()).plan("audit", 1, [], ".")
+                ClaudeWrapper(make_config()).plan("audit", 1, [], ".")
 
     def test_claude_wrapper_no_retry_on_resume_timeout(self):
         # 续会话但超时：这是规划跑太久被强杀，不是启动即退，重试无意义，直接抛错。
-        wrapper = ClaudeWrapper(Config())
+        wrapper = ClaudeWrapper(make_config())
         wrapper.session_id = "old-session"
         with patch("vulnhunt.cli.claude_code.run_process", return_value=ProcResult(-1, "", "", True)):
             with self.assertRaises(RuntimeError):
@@ -136,7 +136,7 @@ class WrapperUnitTests(unittest.TestCase):
             return ProcResult(0, "", "")
 
         with tempfile.TemporaryDirectory() as d, patch("vulnhunt.cli.codex.run_process", side_effect=fake_process):
-            result = CodexWrapper(Config()).exec_task(TaskSpec("task_1", "test", "test"), Path(d))
+            result = CodexWrapper(make_config()).exec_task(TaskSpec("task_1", "test", "test"), Path(d))
         self.assertEqual(result.status, TaskResultStatus.SUCCESS)
 
     def test_codex_wrapper_tolerates_text_preamble(self):
@@ -151,7 +151,7 @@ class WrapperUnitTests(unittest.TestCase):
             return ProcResult(0, "", "")
 
         with tempfile.TemporaryDirectory() as d, patch("vulnhunt.cli.codex.run_process", side_effect=fake_process):
-            result = CodexWrapper(Config()).exec_task(TaskSpec("task_1", "test", "test"), Path(d))
+            result = CodexWrapper(make_config()).exec_task(TaskSpec("task_1", "test", "test"), Path(d))
         self.assertEqual(result.status, TaskResultStatus.PARTIAL)
         self.assertEqual(result.findings, [{"id": "F1"}])
 

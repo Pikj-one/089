@@ -57,7 +57,7 @@
 
 ## 9. resume 未验证
 
-`resume` 命令与中断后续跑逻辑只有状态重建测试，真实运行风险未验证。注意语义：RUNNING 中断后 resume 会**重跑整轮当前 plan**（不会跳过已完成任务），`Workspace` 里已有 `.codex_session` 的任务会续跑会话，但本轮未完成任务的探测动作会重复执行。
+`resume` 命令与中断后续跑逻辑已有单元测试与真实 CLI 门控测试覆盖（2026-08-24），框架层真实运行风险未验证。**CLI 层实测结论**：`codex exec resume` 能续接会话并保留思考记忆（`turn.completed` 的 `cached_input_tokens` 可见跨轮上下文），但**不继承 `session_meta` 的 `sandbox_policy`**——不加 flag 时回落默认沙箱（cwd=workspace 为 `workspace-write`，共享黑板被拒写）。已修复：`codex.py` resume 分支显式传 `--dangerously-bypass-approvals-and-sandbox` 获得全权（等价 fresh 的 danger-full-access）。claude 侧 `--resume` 续接另有专测。未验证的只剩框架层语义：RUNNING 中断后 resume 会**重跑整轮当前 plan**（不会跳过已完成任务），已完成的 task 会续跑会话但探测动作会重复执行。
 
 **修复建议**：实跑一次中断→resume 全流程；如希望"跳过已完成任务"，需要在 WorkerPool 里先读磁盘已有的 `tasks/<tid>_result.json` 再决定是否重派。
 

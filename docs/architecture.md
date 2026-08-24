@@ -142,7 +142,7 @@ codex exec "" -C <workspace> --add-dir <blackboard> --json -o <workspace>/_last_
 ```
 
 - `-C <workspace>`：工作目录（先 `Path(workspace).resolve()` 固定为绝对路径，避免 Windows 下 cwd 相对嵌套成 `runs\...\workspaces\...` 的 os error 3）。
-- `--add-dir <blackboard>`：开放 `<run_dir>/blackboard/` 作为共享黑板目录（所有 codex 共享、跨轮保留）。仅 fresh 分支传入；`codex exec resume` 不支持该标志，续跑时黑板访问靠提示词传达。
+- `--add-dir <blackboard>`：开放 `<run_dir>/blackboard/` 作为共享黑板目录（所有 codex 共享、跨轮保留）。该目录会随会话写入 `session_meta.workspace_roots`，但实测（0.149.0）**resume 不恢复会话的 `sandbox_policy`**——它回落默认沙箱（cwd=workspace 时 `workspace-write`、共享黑板被拒写；cwd 在其他目录时甚至只读），`session_meta` 里的 `workspace_roots`/`sandbox_policy` 并不会让黑板恢复可写。因此 resume 分支必须显式传 `--dangerously-bypass-approvals-and-sandbox` 获得与 fresh 分支 `danger-full-access` 等价的全权访问（2026-08-24 实测：不加此 flag 黑板写入被拒，加了即可写）。
 - `-s danger-full-access`：完整沙箱权限（执行命令、读写文件、联网）。**这是强沙箱声明，请只对授权目标使用**。
 - `--json -o _last_message.json`：codex 把最终回复写成 JSON 文件，vulnhunt 再轮询读取。
 - 任务提示词（模板内嵌）严格约束：
@@ -157,6 +157,8 @@ codex exec "" -C <workspace> --add-dir <blackboard> --json -o <workspace>/_last_
 - `exec_task` 先查 workspace 里是否有 `.codex_session`：有则走 `codex exec resume <id> - ...`（同一会话继续，保留历史上下文）。
 - 首次运行：从 stdout 里找 `type == "thread.started"` 事件，取 `thread_id` 写入 `.codex_session`。
 - 效果：同一 task 跨轮/断点续跑时，Codex 还记得上一轮的思考，而不是从头再来。
+- 沙箱不继承：实测 `codex exec resume` 不会恢复会话记录的 `sandbox_policy`（`session_meta` 存了 `danger-full-access`，resume 仍回落默认沙箱），且 resume 不接受 `-s`/`--add-dir`。因此 resume 分支显式传 `--dangerously-bypass-approvals-and-sandbox` 取得全权沙箱（`codex.py:71`），黑板与工作目录才能读写——**勿误以为配置随会话继承而省略该 flag**。
+- 选项集差异：`codex exec resume` 的选项集比 `exec` 更小——不接受 `--color`（报 `unexpected argument`）、`--add-dir`、`-s`，沙箱相关仅 `--dangerously-bypass-approvals-and-sandbox`。全权沙箱只能靠该 flag（见上一条）；**勿给 resume 分支补 `--color never` 等 exec-only 标志**。
 
 ### 4.4 结果读取
 

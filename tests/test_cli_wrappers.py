@@ -155,5 +155,52 @@ class WrapperUnitTests(unittest.TestCase):
         self.assertEqual(result.status, TaskResultStatus.PARTIAL)
         self.assertEqual(result.findings, [{"id": "F1"}])
 
+    def test_codex_wrapper_fresh_branch_keeps_sandbox_flags(self):
+        # 无 .codex_session → 全新会话：仍传 -s 沙箱、--color、--add-dir 黑板；
+        # 只有 resume 分支才省略这些（沙箱/黑板随会话继承，见 test_codex_wrapper_resume_branch_omits_sandbox_flags）。
+        captured = {}
+
+        def fake_process(args, cwd=None, **kwargs):
+            captured['args'] = args
+            Path(args[args.index("-o") + 1]).write_text(json.dumps({"status": "SUCCESS", "summary": "ok", "findings": []}), encoding="utf-8")
+            return ProcResult(0, "", "")
+
+        with tempfile.TemporaryDirectory() as d:
+            store = RunStore.create(Path(d), Run("r1", "audit", "now", max_rounds=2, config_snapshot={}))
+            ws = store.root / "workspaces" / "round_001_task_1"; ws.mkdir(parents=True)
+            with patch("vulnhunt.cli.codex.run_process", side_effect=fake_process):
+                CodexWrapper(make_config(), store=store).exec_task(TaskSpec("task_1", "test", "test"), ws)
+        args = captured['args']
+        self.assertEqual(args[0], "codex")
+        self.assertNotIn("resume", args)
+        self.assertIn("--add-dir", args)   # 黑板目录
+        self.assertIn("-s", args)          # 沙箱权限
+        self.assertIn("--color", args)     # 禁色输出
+
+    def test_codex_wrapper_resume_branch_omits_sandbox_flags(self):
+        # workspace 有 .codex_session → 续接走 `codex exec resume`；
+        # 不传 --add-dir/-s/--color（resume 不接受这些 exec-only 标志），但显式传
+        # --dangerously-bypass-approvals-and-sandbox 获得全权沙箱——实测 resume 不继承 session_meta 的
+        # sandbox_policy，不加此 flag 会回落 workspace-write、共享黑板目录被拒写。
+        captured = {}
+
+        def fake_process(args, cwd=None, **kwargs):
+            captured['args'] = args
+            Path(args[args.index("-o") + 1]).write_text(json.dumps({"status": "SUCCESS", "summary": "ok", "findings": []}), encoding="utf-8")
+            return ProcResult(0, "", "")
+
+        with tempfile.TemporaryDirectory() as d:
+            ws = Path(d) / "ws"; ws.mkdir()
+            (ws / ".codex_session").write_text("sess-abc", encoding="utf-8")
+            with patch("vulnhunt.cli.codex.run_process", side_effect=fake_process):
+                CodexWrapper(make_config()).exec_task(TaskSpec("task_1", "test", "test"), ws)
+        args = captured['args']
+        self.assertEqual(args[:4], ["codex", "exec", "resume", "sess-abc"])
+        self.assertIn("--json", args)
+        self.assertIn("-o", args)
+        self.assertIn("--dangerously-bypass-approvals-and-sandbox", args)  # 全权沙箱：resume 不继承 sandbox_policy
+        for banned in ("--add-dir", "-s", "--color", "-C"):
+            self.assertNotIn(banned, args)
+
 
 if __name__ == "__main__": unittest.main()

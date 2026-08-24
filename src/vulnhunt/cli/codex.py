@@ -68,7 +68,11 @@ class CodexWrapper:
             if ev.get('type')=='item.completed' and item.get('text'):
                 if item.get('type')=='reasoning': self.logger(f"CODEX-{task.id}-THINK", item['text'])
                 elif item.get('type')=='agent_message': self.logger(f"CODEX-{task.id}", item['text'])
-        if session_id: args=[exe,'exec','resume',session_id,'-','--json','-o',str(output_file),'--skip-git-repo-check']
+        # resume 分支：实测 codex 0.149.0 不继承会话的 sandbox_policy（session_meta 记录 danger-full-access，
+        # resume 仍回落默认沙箱：cwd=workspace 时为 workspace-write、共享黑板目录被沙箱拒绝写入）。
+        # resume 不接受 -s/--add-dir（exec-only 标志），全权沙箱只能靠 --dangerously-bypass-approvals-and-sandbox
+        # （语义 ≈ fresh 分支的 danger-full-access，仅对授权目标使用）。
+        if session_id: args=[exe,'exec','resume',session_id,'-','--json','-o',str(output_file),'--skip-git-repo-check','--dangerously-bypass-approvals-and-sandbox']
         elif blackboard: args=[exe,'exec','', '-C',str(workspace),'--add-dir',str(blackboard),'--json','-o',str(output_file),'-s',self.config.codex_sandbox,'--skip-git-repo-check','--color','never']
         else: args=[exe,'exec','', '-C',str(workspace),'--json','-o',str(output_file),'-s',self.config.codex_sandbox,'--skip-git-repo-check','--color','never']
         r=run_process(args,cwd=workspace,input_text=prompt,timeout_s=self.config.codex_timeout_s,cancel_event=self.cancel_event,on_stdout_line=on_line); p=output_file

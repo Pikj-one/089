@@ -61,6 +61,7 @@ class ClaudeWrapper:
         raw=(raw or r.stdout).strip().removeprefix('```json').removesuffix('```').strip()
         if raw.startswith('{') and '\n{' in raw: raw=raw.splitlines()[-1]
         plan=Plan.from_dict(json.loads(raw))
+        plan.round=round_no  # 模型输出 JSON 不含 round，这里由调用方 round_no 回填（orchestrator 也会再设一遍，同值无害）
         orders=compute_orders(plan.tasks)  # order 由代码按 depends_on 计算，不再依赖模型
         for t in plan.tasks: t.order=orders[t.id]; t.depends_on=[]
         self.logger("CLAUDE", f"第 {round_no} 轮规划完成：拆分 {len(plan.tasks)} 个任务")

@@ -91,7 +91,7 @@ claude -p "" --output-format stream-json --include-partial-messages --verbose \
 
 - `-p` + stdin 传入 `planner_prompt()`（见 3.3）。
 - `--output-format stream-json`：每行一个 JSON 事件，供实时解析与日志回放。
-- `--permission-mode bypassPermissions`：允许 Claude 读 run 目录里的 CLAUDE.md 等文件而不弹权限。
+- `--permission-mode bypassPermissions`：允许 Claude 读 run 目录里的 CLAUDE.md 等文件而不弹权限。**permission mode 不随会话继承**（2026-08-24 CLI 实测）：resume 恢复上下文记忆（`usage.cache_read_input_tokens` 可见整段历史被加载），但不恢复 bypassPermissions——resume 不传 `--permission-mode` 时回落默认权限（`-p` 非交互无法弹授权，连读 run 目录文件都被拒）。因此**每轮（含 resume）都必须显式传 `--permission-mode bypassPermissions`**，与 codex 侧 `resume` 不继承 `sandbox_policy` 的行为一致（见 §4.3）。
 - 第 1 轮 `--session-id <uuid>` 新建会话；第 2 轮起改用 `--resume <uuid>` 续接同一会话（跨轮上下文延续，同一大脑延续历史）。注意 `--session-id` 的语义是「新建指定 ID 的会话」，对已落盘的 ID 会报 `already in use` 启动即退——续接必须用 `--resume`（2026-08-24 实测确认）。若续接的子进程仍启动即退，`plan()` 自动放弃旧会话、换全新会话重试一次——主 agent 直连后规划状态全在 prior+黑板里，换会话零损失。
 
 ### 3.2 结果解析

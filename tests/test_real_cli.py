@@ -46,4 +46,20 @@ class RealCliTests(unittest.TestCase):
             self.assertEqual(r2.status, TaskResultStatus.SUCCESS)
             self.assertIn("VERIFIED", (bb / "marker.txt").read_text(encoding="utf-8"))
 
+    def test_claude_real_resume_reuses_session_across_rounds(self):
+        # 真实 claude 中断续接：第 1 轮 --session-id 新建会话规划，第 2 轮（wrapper.session_id 仍在内存）
+        # 自动走 --resume 续接同一会话。CLI 实测（2026-08-24）：跨进程 resume 恢复上下文记忆
+        # （usage.cache_read_input_tokens 可见历史被加载），但 permission mode 不随会话继承——
+        # resume 分支必须显式传 --permission-mode bypassPermissions（claude_code.py 每轮都传）。
+        # 本测试验证端到端：两轮规划均成功、第 2 轮续接不因权限/会话问题失败。
+        import uuid
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+            store = RunStore.create(Path(d), Run(uuid.uuid4().hex[:12], "claude-resume", "now", max_rounds=2, config_snapshot={}))
+            wrapper = ClaudeWrapper(self.config, store=store)
+            p1 = wrapper.plan("只检查项目入口并给出一个最小审计计划", 1, [], ".")
+            self.assertEqual(p1.round, 1)
+            p2 = wrapper.plan("基于上一轮计划，给出下一轮的最小审计计划", 2, [], ".")
+            self.assertEqual(p2.round, 2)
+            self.assertTrue(wrapper.session_id)  # 会话 ID 跨轮保留（内存），供下轮 --resume
+
 if __name__ == "__main__": unittest.main()

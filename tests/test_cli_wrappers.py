@@ -107,6 +107,26 @@ class WrapperUnitTests(unittest.TestCase):
         self.assertEqual(args[args.index("--resume") + 1], "kept-session")
         self.assertIn("当前轮次：2", prompt)
 
+    def test_claude_wrapper_resume_keeps_permission_flag(self):
+        # 实测：claude --resume 恢复会话上下文（usage.cache_read_input_tokens 可见整段历史被加载），
+        # 但 permission mode 不随会话继承——resume 不传 --permission-mode bypassPermissions 时
+        # 回落默认权限（-p 非交互无法弹授权，连读 run 目录文件都被拒）。因此 resume 分支必须
+        # 和首轮一样显式传该 flag，否则第 2 轮起规划子进程读不到 CLAUDE.md / 黑板。
+        seen = []
+
+        def fake_process(args, **kwargs):
+            seen.append(args)
+            return ProcResult(0, _plan_output([{"id": "task_1", "title": "scan", "description": "scan it"}]), "")
+
+        with patch("vulnhunt.cli.claude_code.run_process", side_effect=fake_process):
+            wrapper = ClaudeWrapper(make_config())
+            wrapper.session_id = "kept-session"
+            wrapper.plan("audit", 2, [], ".")
+        args = seen[0]
+        self.assertIn("--resume", args)
+        self.assertIn("--permission-mode", args)
+        self.assertEqual(args[args.index("--permission-mode") + 1], "bypassPermissions")
+
     def test_claude_wrapper_round1_creates_new_session(self):
         # 首轮无既有会话：仍用 --session-id 新建。
         with patch("vulnhunt.cli.claude_code.run_process", return_value=ProcResult(0, _plan_output([{"id": "task_1", "title": "scan", "description": "scan it"}]), "")) as m:

@@ -45,11 +45,9 @@
 
 去重（2026-08-23）：同 order 并行任务若都抓取同一批基础资源（页面/JS 包）会各自重复下载——首波黑板为空，"先查黑板"无法避免，需规划侧先安排 order 最低的站点镜像任务写入黑板、分析任务 `depends_on` 它。这依赖模型自觉；若仍出现重复抓取，需在 `codex.py` 提示词或规划规则再强化。
 
-## 7. 授权范围是占位符而非硬编码
+## 7. ✅ 授权范围靠模型读 CLAUDE.md 而非硬编码 — 维持机制设计
 
-`prompts.py` 的 `授权范围：{{这里由你填写}}` 不硬编码 imou.com，靠运行时顶层 Claude 读取 run 目录复制的 `CLAUDE.md` 自行补全（`RunStore.create()` 的复制行为是前提）。
-
-**修复建议**：这是机制设计而非 bug，但若想兜底，可在 `planner_prompt()` 里直接把 `CLAUDE.md` 的授权范围/清单内容填充进占位符（由代码注入而非依赖模型自觉）。
+授权范围与垃圾漏洞清单不注入提示词、不硬编码，由规划模型读取 run 目录复制的 `CLAUDE.md`（`RunStore.create()` 的复制行为是前提，claude 子进程 cwd 即 run 目录）。2026-08-24 架构重构时评估过"代码直读 CLAUDE.md 注入提示词"方案并实现过原型，按用户决定撤回——维持模型自行读取。风险同前：模型若不读文件则无授权约束，实跑日志显示各轮均会主动读取，暂不加代码层兜底。
 
 ## 8. Windows 兼容性依赖
 
@@ -66,5 +64,6 @@
 ## 10. ✅ codex 结果解析容错 + 轮次阶段提示词 — 已解决（2026-08-23）
 
 - **codex 结果解析**：codex 会在 `_last_message.json` 的 JSON 前写解释文字（实测 `All work complete. Final report written to ...`），原 `json.loads(raw)` 直接失败 → 20 次轮询全败 → 任务被标 FAILURE、findings 全部丢失（一次真实 run 的 task_3 因此丢掉全部 High 发现）。已修复：`cli/codex.py` 新增 `_extract_json()`，取第一个 `{` 到最后一个 `}` 的子串再解析。
-- **轮次阶段提示词**：`prompts.py` 转发段新增「轮次阶段」规则——第 1 轮信息收集轮（严禁漏洞探测类任务）、第 2 轮方向规划轮（规划器直接定方向，不设单独方向分析 codex）、第 3 轮起利用深化轮（每轮 1~3 个方向）；禁止"测试所有漏洞类型"这类塞满全链路的巨型任务。
-- **第 2 轮 PLANNING Broken pipe — 已复现并修复（2026-08-24）**：三次真实 run（08-23 两 + 08-24 `10-35`）全部在第 2 轮 PLANNING 崩溃。08-24 那次首次捕获异常（`logs/round_002.log` → `run failed: RuntimeError: [Errno 32] Broken pipe`）。完整链路：`plan()` 复用同一 `--session-id` 续接既有会话 → claude 子进程启动即退（零 stdout 输出、关闭 stdin）→ 父进程向 stdin 写提示词触发 `BrokenPipeError` → `cli/base.py` 的 `except OSError` 把子进程 stderr 整个丢弃、返回 `ProcResult(-1,'',str(e))` → `cli/claude_code.py` 据此 `raise RuntimeError("[Errno 32] Broken pipe")` → `run_loop` 标 FAILED。修复两处：① `cli/base.py` `run_process` 的 OSError 分支改为保留子进程已打印的 stderr；② `cli/claude_code.py` `plan()` 在"续接既有会话且非超时失败"时放弃旧会话、换全新会话重试一次（prior 已随提示词传入，规划上下文不丢）。**子进程为何启动即退仍未确证**——修复①后若再失败，`logs/round_<N>.log` 里会直接看到子进程 stderr 的真实报错，届时按需改用"每轮全新会话"方案。
+- **轮次阶段提示词**：`prompts.py` 新增「轮次阶段」规则——第 1 轮信息收集轮（严禁漏洞探测类任务）、第 2 轮方向规划轮（规划器直接定方向）、第 3 轮起利用深化轮（每轮 1~3 个方向）；禁止"测试所有漏洞类型"这类塞满全链路的巨型任务。
+- **第 2 轮 PLANNING Broken pipe — 根因已确证并根治（2026-08-24）**：三次真实 run（08-23 两 + 08-24 `10-35`）全部在第 2 轮 PLANNING 崩溃。08-24 那次首次捕获异常（`logs/round_002.log` → `run failed: RuntimeError: [Errno 32] Broken pipe`）。完整链路：`plan()` 复用同一 `--session-id` 续接既有会话 → claude 子进程启动即退（零 stdout 输出、关闭 stdin）→ 父进程向 stdin 写提示词触发 `BrokenPipeError` → `cli/base.py` 的 `except OSError` 把子进程 stderr 整个丢弃、返回 `ProcResult(-1,'',str(e))` → `cli/claude_code.py` 据此 `raise RuntimeError("[Errno 32] Broken pipe")` → `run_loop` 标 FAILED。修复两处：① `cli/base.py` `run_process` 的 OSError 分支改为保留子进程已打印的 stderr；② `cli/claude_code.py` `plan()` 在"续接既有会话且非超时失败"时放弃旧会话、换全新会话重试一次（prior 已随提示词传入，规划上下文不丢）。**启动即退的根因当日确证**：`--session-id` 的语义是「新建指定 ID 的会话」，对已落盘的 ID 直接报 `Error: Session ID ... is already in use.` exit 1（实测复现）。此前兜底虽救回 run，但每轮都触发换新会话，跨轮上下文实际从未延续。根治：第 2 轮起改用 `--resume <id>` 续接（保持同一 session ID、上下文保留，实测验证）；resume 因其他原因失败时仍保留换新会话兜底。
+- **两层规划架构移除 — 主 agent 直连（2026-08-24）**：旧「顶层 Claude → Plan subagent」结构下，转发段要在顶层上下文存两份（提示词 + Agent 工具入参）且随每轮 resume 永久重放，是多轮规划上下文膨胀的最大源头；而 order 计算本就是确定性算法、占位符补全只是读文件，都不需要 LLM。重构为单层直连：模型只输出带 `depends_on` 的 tasks JSON，order 由 `models.compute_orders()` 代码计算；授权范围/垃圾清单由模型自行读 run 目录 CLAUDE.md（占位符机制废除）；prior 注入前经 `slim_prior()` 剥掉 stdout_tail/stderr_tail。每轮净沉淀只剩规划器自身的思考与任务 JSON，上下文按构造有界。旧的 subagent JSON 流式捕获机器与 `planner_resume_prompt()` 一并删除；`logview.is_plan_stream()` 保留仅供旧日志回放。

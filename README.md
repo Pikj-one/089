@@ -3,13 +3,13 @@
 自动化黑盒漏洞挖掘编排框架（v0.8.0）。**Claude 当大脑做规划，Codex 当手去执行**——Claude 按「轮次阶段」把目标拆成 JSON 任务列表，分发给并行 Codex 实例，循环多轮直至 `max_rounds`，产出漏洞发现与报告。轮次按阶段推进：第 1 轮只做信息收集，第 2 轮由规划器定方向，之后轮次聚焦利用与验证（详见 [docs/rounds.md](docs/rounds.md)）。
 
 ```
-目标/上轮结果 → Claude 大脑 → Plan subagent → JSON tasks → Codex x N（并行） → 结果 → 下轮
-                          └──────── 循环（默认最多 50 轮）──────────────┘
+目标/上轮结果 → Claude 大脑（直接规划）→ JSON tasks（depends_on）→ compute_orders() → Codex x N（并行） → 结果 → 下轮
+                          └────────────── 循环（默认最多 50 轮）──────────────────────┘
 ```
 
 - **目标**：`*.imou.com`（授权范围），关注"垃圾漏洞"清单——安全头缺失、CORS/Self-XSS、版本号/方法名/类名泄露、账号/验证码爆破（见 `CLAUDE.md`）。
 - **架构**：纯 stdlib、零第三方依赖、Python ≥ 3.11；本地依赖 `claude` 与 `codex` 两个 CLI。
-- **状态**：单元测试 42 个全过（40 ok + 2 跳过真实 CLI 门控）；已在授权目标上实跑（见 `../vulnhunt-runs`），产出真实 High/Medium 发现。
+- **状态**：单元测试 44 个全过（42 ok + 2 跳过真实 CLI 门控）；已在授权目标上实跑（见 `../vulnhunt-runs`），产出真实 High/Medium 发现。
 
 ## 快速开始
 

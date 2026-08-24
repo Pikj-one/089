@@ -14,17 +14,18 @@ vulnhunt 在中间只做三件事：**组装上下文 → 调度子进程 → �
 ```
                     ┌─────────────────────────── vulnhunt ───────────────────────────┐
   目标 + 上轮结果      │  prompts.py(模板)   orchestrator.py(状态机)   state.py(落盘)     │
-──► Claude ──► Plan ──►  JSON tasks ──►  WorkerPool ──►  Codex x N ──► 结果文件
-   (顶层代理)  (subagent)                (线程池)         (独立 workspace)    │
-                                                                          ▼
-                                                    report.py ◄── tasks/*_result.json
+──► Claude（大脑）────►  JSON tasks（depends_on）── compute_orders() ──► WorkerPool ──►  Codex x N ──► 结果文件
+                                                            (线程池)      (独立 workspace)    │
+                                                                                              ▼
+                                                                        report.py ◄── tasks/*_result.json
 ```
 
-### 为什么用"大脑-手"两段式？
+### 为什么是"单一大脑 + 多手"直连架构？
 
 - **上下文隔离**：每个 Codex 实例不共享任何信息，任务之间天然并行且互不污染，避免一个长会话上下文膨胀失控。
 - **规划收敛**：Claude 大脑汇总所有手的结果后统一决策，保证攻击面覆盖有全局视角。
-- **进程级故障隔离**：Codex 崩了不影响其他手，也不影响规划进程；Claude 会话固定 session-id，可跨轮续上下文。
+- **进程级故障隔离**：Codex 崩了不影响其他手，也不影响规划进程；Claude 会话跨轮 resume 续上下文。
+- **无中转层**（2026-08-24 重构）：曾有「顶层 Claude → Plan subagent」两层结构——顶层负责转发提示词与计算 order。实测发现转发段要在顶层上下文里存两份、且随每轮 resume 永久重放，是多轮规划上下文膨胀的最大源头；而 order 计算本就是确定性算法、占位符补全只是读文件，都不需要 LLM。现改为主 agent 直连规划：order 由 `models.compute_orders()` 代码计算，授权范围/垃圾清单由模型自行读取 run 目录 CLAUDE.md，prior 注入前剥掉 stdout/stderr 噪音——每轮净沉淀只剩规划器自己的思考与任务 JSON，上下文按构造有界。
 
 ### 一次 run 的完整时序
 
@@ -35,9 +36,8 @@ start (main.py)
   └─ Orchestrator.run_loop()  循环 step()
        ├─ INIT        round=1 → PLANNING
        ├─ PLANNING    ClaudeWrapper.plan()：调 `claude -p`，喂 planner_prompt()
-       │                ├─ 顶层 Claude 把"转发段"原样转发给 Plan subagent
-       │                ├─ Plan subagent 输出 JSON tasks（含授权范围/清单占位符补全）
-       │                ├─ 捕获 stream-json 里的 input_json_delta 拼装出完整 JSON
+       │                ├─ 主 agent 直接规划，输出 JSON tasks（含 depends_on；授权范围/垃圾清单由模型读 run 目录 CLAUDE.md）
+       │                ├─ compute_orders() 按依赖算 order，清空 depends_on 后存盘
        │                └─ 存 plans/round_NNN_plan.json
        ├─ DISPATCHING → RUNNING
         ├─ RUNNING      WorkerPool：按 order 分波执行（同波 ThreadPoolExecutor 并行）
@@ -86,40 +86,33 @@ start (main.py)
 
 ```python
 claude -p "" --output-format stream-json --include-partial-messages --verbose \
-       --permission-mode bypassPermissions --session-id <uuid>
+       --permission-mode bypassPermissions (--session-id <uuid> | --resume <uuid>)
 ```
 
 - `-p` + stdin 传入 `planner_prompt()`（见 3.3）。
-- `--output-format stream-json`：每行一个 JSON 事件，供实时解析。
-- `--include-partial-messages`：**关键**——让 tool_use 的 `input_json_delta` 增量可见，才能拼出 Plan subagent 正在生成的 tasks JSON。
+- `--output-format stream-json`：每行一个 JSON 事件，供实时解析与日志回放。
 - `--permission-mode bypassPermissions`：允许 Claude 读 run 目录里的 CLAUDE.md 等文件而不弹权限。
-- 固定 `--session-id`：跨轮续上下文（同一大脑延续历史）；若续会话的子进程启动即退（Windows 上曾表现为 stdin Broken pipe），`plan()` 自动放弃旧会话、换全新会话重试一次——prior 已随提示词传入，规划上下文不丢。
+- 第 1 轮 `--session-id <uuid>` 新建会话；第 2 轮起改用 `--resume <uuid>` 续接同一会话（跨轮上下文延续，同一大脑延续历史）。注意 `--session-id` 的语义是「新建指定 ID 的会话」，对已落盘的 ID 会报 `already in use` 启动即退——续接必须用 `--resume`（2026-08-24 实测确认）。若续接的子进程仍启动即退，`plan()` 自动放弃旧会话、换全新会话重试一次——主 agent 直连后规划状态全在 prior+黑板里，换会话零损失。
 
-### 3.2 Plan subagent 的 JSON 捕获（三路并行）
+### 3.2 结果解析
 
-1. **`input_json_delta` 流式拼装**：`on_line()` 把每个 `content_block_delta.input_json_delta.partial_json` 按 `index` 累加进 `subagent_input_parts[index]`；每次累加后尝试 `json.loads`，一旦能解析且内容命中 `capture_plan_subagent()`（含 `subagent_type == "Plan"`），就认为这是规划任务，记录该 tool 的 id。
-2. **`content_block` 静态扫描**：`remember_plan_tool()` 递归遍历每个事件的 `content_block` / `message`，找出 `type == "tool_use"` 且 input 里带 `subagent_type == "Plan"` 的 tool_id，记入 `plan_tool_ids`。
-3. **result envelope 回退**：进程结束后，从 stdout 反序遍历找 `type == "result"` 的 envelope，取 `result.text` 作为规划输出；再做清洗：
-   - 去掉 ```` ```json ```` 围栏（`removeprefix/removesuffix`）；
-   - 若 raw 以 `{` 开头且含 `\n{`，**只取最后一行**（防模型把解释文字和 JSON 混在一行）；
-   - `json.loads` 失败即抛异常 → 整个 run 标记 FAILED。
+进程结束后从 stdout 反序遍历找 `type == "result"` 的 envelope，取 `result.text` 作为规划输出；再做清洗：
 
-`plan_tool_ids` 同时喂给 `logview.py` 的 `is_plan_stream()`，让 TUI/日志渲染时能把 Plan subagent 的 thinking/tool 调用区分出来高亮。
+- 去掉 ```` ```json ```` 围栏（`removeprefix/removesuffix`）；
+- 若 raw 以 `{` 开头且含 `\n{`，**只取最后一行**（防模型把解释文字和 JSON 混在一行）；
+- `json.loads` 失败即抛异常 → 整个 run 标记 FAILED。
 
-### 3.3 桥接协议（`src/vulnhunt/prompts.py`）
+解析出的 tasks 随即过 `models.compute_orders()`：order 由代码按 `depends_on` 计算（无依赖/悬空引用→0，否则 1+max(有效依赖)，环上任务→0），计算后清空 `depends_on` 再落盘——模型只负责声明依赖，排序永远确定性。stream-json 的逐行事件仍实时喂给 `logview.ClaudeLogRenderer` 做 TUI 渲染（thinking/tool 流高亮），但不再做任何 subagent 拼装捕获（那是旧两层架构的需求）。
 
-`planner_prompt(goal, round_no, prior, workspace_root, max_workers=10)` 生成喂给顶层 Claude 的提示词，按**三层角色**组织：
+### 3.3 提示词（`src/vulnhunt/prompts.py`）
 
-- **系统角色**：顶层 Claude（调度中枢）→ Plan subagent（规划器）→ codex（执行器/手）。顶层 Claude 职责固定为 3 步：① 读 run 目录复制的 `CLAUDE.md`，补全转发段中的占位符（授权范围、垃圾漏洞清单）；② 将 `===开始===` 到 `===结束===` 的内容**原样**转发给 Plan subagent（严禁增删改）；③ 按写死的 order 规则计算每个任务的 `order`，输出**纯英文、纯 JSON** 的 `{"tasks":[{id,title,description,required_output?,relevant_context?,order}]}`，最终 JSON 不保留 `depends_on`。
-- **order 规则**（顶层段）：无 `depends_on` 或引用非本轮任务→0；否则 `1 + max(依赖的 order)`；循环/悬空引用→0；`order` 越小越先、相同并行、依赖方 order 严格小于被依赖方。
-- **转发段（只写给 Plan subagent）**：`===开始===` 到 `===结束===`，包含——
-  - 任务（漏洞挖掘规划）、类型（黑盒）、目的（Critical/High/Medium）；
-  - **`授权范围：{{这里由你填写}}` / `垃圾漏洞清单：{{这里由你填写}}`** —— 占位符，由顶层 Claude 读取 run 目录里复制的 `CLAUDE.md` 后补全（机制依赖 `RunStore.create()` 的复制行为）；
-  - 唯一工作目录 = `workspace_root`（run 目录绝对路径），禁止越权访问父目录；
-  - 目标 / 当前轮次 / 上轮结果（prior，JSON 序列化回填）；
-  - **subagent 职责**：只规划并标注 `depends_on`（本轮任务 id 列表），**不计算 order**；
-  - **规划约束**：并发上限 `max_workers`（f-string 注入实际配置值，超出的 task 被系统直接丢弃不排队）；共享黑板路径 = `{workspace_root}/blackboard`（f-string 注入），跨轮、跨 codex 保留，codex 会写入抓取的原始资源与派生中间结果、先查黑板再下载（命名 `<工作目录名>_<原文件名>`）；同 order 并行写仍可能竞态、跨 order 顺序执行可靠读取前置中间结果；**去重规划**——多个任务依赖同一批基础资源时，先规划 order 最低的站点镜像任务写入黑板，分析任务 `depends_on` 它并从黑板读取；codex 内置完整工具链、一个 task 对应一个 codex；"第一轮你只会获得一个域名……严禁刻意子域名收集"；每轮返回上一轮执行结果；
-  - **轮次阶段（鼓励多轮推进）**：每轮只规划本轮该做的事，禁止一轮塞满"收集→定方向→利用→验证"全链路。第 1 轮 = 信息收集轮（只规划镜像/指纹/端点清单，严禁漏洞探测类任务，任务数 ≤3）；第 2 轮 = 方向规划轮（**由规划器直接定方向**——基于上轮结果与黑板产物决定 1~2 个方向，直接规划聚焦利用任务，不设单独的方向分析 codex，避免把方向压力压给单个 codex）；第 3 轮起 = 利用深化轮（每轮聚焦 1~3 个方向）。一条铁律：一个任务只聚焦一个方向/一个系统区域，描述出现"测试所有漏洞类型/全面检测"即视为过重、必须拆分。
+`planner_prompt(goal, round_no, prior, workspace_root, max_workers=10)` 单层直连，结构：
+
+- **角色**：规划大脑。每轮拆任务列表（JSON），执行交给 codex。
+- **项目上下文**：授权范围与垃圾漏洞清单由模型自行读取当前目录（run 目录）的 CLAUDE.md（依赖 `RunStore.create()` 复制项目根 CLAUDE.md 进 run 目录的行为）；目标 / 当前轮次 / 上轮结果（prior 经 `slim_prior()` 剥掉 stdout_tail/stderr_tail 后 JSON 序列化注入——规划决策只需 status/summary/findings 与证据路径，裸输出尾部是纯噪音且一旦进入续接会话历史就每轮重放）；共享黑板路径；并发上限 `max_workers`。
+- **输出契约**：纯英文 JSON `{"tasks":[{id,title,description,required_output?,relevant_context?,depends_on?}]}`；不输出 order（系统按 depends_on 计算）。
+- **规划约束**：depends_on 只引用本轮任务 id、只标直接依赖；去重规划（镜像任务写黑板、分析任务 depends_on 它）；一个任务一个方向，过重必须拆分。
+- **轮次阶段**：第 1 轮 = 信息收集轮（严禁漏洞探测类任务，首个任务必须是站点镜像写黑板）；第 2 轮 = 方向规划轮（基于黑板产物定 5~8 个方向直接开任务）；第 3 轮起 = 利用深化轮（每轮 1~3 个方向）。
 
 ### 3.4 日志
 
@@ -217,7 +210,7 @@ def _write(self, name, obj):
 
 - **三层动作**：`LogAction`（整行）、`StreamAction`（流式增量）、`StreamEndAction`（结束当前流式行）。TUI 与 `AggregateSink`（回放）都消费这层抽象。
 - **截断策略**（常量）：tool 结果 2000 字符/30 行、tool 输入 500、思考 2000、文本 4000、最终结果 500——长输出不会刷爆界面。
-- **`is_plan_stream()`**：命中 `subagent_type=="Plan"` 或 `parent_tool_use_id ∈ plan_tool_ids` 的行按"规划"组件高亮，把大脑的规划思考与顶层输出区分开。
+- **`is_plan_stream()`**：命中 `subagent_type=="Plan"` 或 `parent_tool_use_id ∈ plan_tool_ids` 的行按"规划"组件高亮。旧两层架构的产物，生产路径已不再传入 plan_tool_ids（主 agent 直连后无 subagent），保留仅供 `vulnhunt log` 回放历史 run 的旧日志。
 - **回放**：`vulnhunt log <run_dir> [--round N]` → `replay_file()` 重新喂给 `ClaudeLogRenderer`，重现当时界面。
 
 ## 8. 关键设计权衡
@@ -226,7 +219,7 @@ def _write(self, name, obj):
 |---|---|---|
 | 子进程而非 in-process 调用 LLM | 隔离、可强杀、复用成熟 CLI | 协议对接复杂（stream-json 解析） |
 | Codex 任务间通过黑板共享中间结果 + order 分波 | 复用公共资源/中间结果、跨轮保留；同轮跨波次依赖可靠 | 同 order 并行写黑板仍有竞态，共享区靠提示词约束 |
-| Claude 固定 session-id | 跨轮延续规划上下文 | 长 run 上下文成本持续累积 |
+| Claude 固定 session-id | 跨轮延续规划上下文 | 长 run 上下文成本持续累积（主 agent 直连 + prior 瘦身已把每轮净沉淀压到最小） |
 | 每任务独立 workspace + 会话续跑 | 断点续跑、故障隔离 | 磁盘占用、需要 .codex_session 机制 |
 | 纯 stdlib、零依赖 | 部署即用、无供应链面 | 一切轮子自己造（TUI、渲染、并发） |
 | findings 独立落盘方法存在但未接 | 预留扩展（见 known-gaps） | 实际 findings 只藏在 task 结果里 |

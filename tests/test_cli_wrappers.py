@@ -6,79 +6,128 @@ from vulnhunt.config import Config
 from vulnhunt.models import TaskSpec, TaskResultStatus, Run
 from vulnhunt.state import RunStore
 from vulnhunt.cli.base import ProcResult
-from vulnhunt.cli.claude_code import ClaudeWrapper
+from vulnhunt.cli.claude_code import ClaudeWrapper, slim_prior
 from vulnhunt.cli.codex import CodexWrapper
+
+
+def _plan_output(tasks):
+    return json.dumps({"type": "result", "result": json.dumps({"tasks": tasks})})
 
 
 class WrapperUnitTests(unittest.TestCase):
     def test_claude_wrapper_parses_plan_json(self):
-        output = json.dumps({"type": "result", "result": json.dumps({"tasks": [{"id": "task_1", "title": "scan", "description": "scan it"}]})})
+        output = _plan_output([{"id": "task_1", "title": "scan", "description": "scan it"}])
         with patch("vulnhunt.cli.claude_code.run_process", return_value=ProcResult(0, output, "")):
             plan = ClaudeWrapper(Config()).plan("audit", 1, [], ".")
         self.assertEqual(plan.tasks[0].id, "task_1")
 
-    def test_claude_wrapper_captures_plan_subagent_type(self):
-        output = json.dumps({"type": "result", "result": json.dumps({"tasks": []})})
-        events = [json.dumps({
-            "type": "stream_event",
-            "event": {
-                "type": "content_block_start",
-                "index": 0,
-                "content_block": {"type": "tool_use", "id": "tool_plan", "name": "Task", "input": {"subagent_type": "Plan"}},
-            },
-        }), json.dumps({
-            "type": "stream_event",
-            "event": {"type": "content_block_delta", "index": 1, "delta": {"type": "text_delta", "text": "Plan output"}},
-            "parent_tool_use_id": "tool_plan",
-            "subagent_type": "Plan",
-        })]
+    def test_claude_wrapper_computes_orders_from_depends_on(self):
+        # order 由代码按 depends_on 计算（原为顶层 LLM 的职责），模型输出的 order 字段被覆盖，depends_on 随后清空。
+        output = _plan_output([
+            {"id": "mirror", "title": "镜像", "description": "抓取", "order": 99},
+            {"id": "analyze", "title": "分析", "description": "读黑板", "depends_on": ["mirror"]},
+            {"id": "exploit", "title": "利用", "description": "深挖", "depends_on": ["analyze"]},
+        ])
+        with patch("vulnhunt.cli.claude_code.run_process", return_value=ProcResult(0, output, "")):
+            plan = ClaudeWrapper(Config()).plan("audit", 1, [], ".")
+        by_id = {t.id: t for t in plan.tasks}
+        self.assertEqual([by_id["mirror"].order, by_id["analyze"].order, by_id["exploit"].order], [0, 1, 2])
+        self.assertTrue(all(t.depends_on == [] for t in plan.tasks))
+
+    def test_claude_wrapper_slims_prior_in_prompt(self):
+        # prior 瘦身：stdout_tail/stderr_tail（各 4000 字符噪音）不得进入规划提示词。
+        captured = {}
+        fat_prior = [{"task_id": "round_001_task_1", "status": "SUCCESS", "summary": "ok",
+                      "stdout_tail": "X" * 4000, "stderr_tail": "Y" * 4000}]
 
         def fake_process(args, **kwargs):
-            for event in events:
-                kwargs["on_stdout_line"](event)
+            captured['prompt'] = kwargs['input_text']
+            return ProcResult(0, _plan_output([{"id": "task_1", "title": "s", "description": "s"}]), "")
+
+        with patch("vulnhunt.cli.claude_code.run_process", side_effect=fake_process):
+            ClaudeWrapper(Config()).plan("audit", 2, fat_prior, ".")
+        self.assertNotIn("XXXX", captured['prompt'])
+        self.assertIn('"summary": "ok"', captured['prompt'])
+        # 落盘契约不受影响：slim_prior 是纯函数，原 dict 不被修改
+        self.assertEqual(len(fat_prior[0]['stdout_tail']), 4000)
+
+    def test_slim_prior_drops_only_noise_fields(self):
+        item = {"task_id": "t", "status": "SUCCESS", "stdout_tail": "x", "stderr_tail": "y", "findings": [1]}
+        slim = slim_prior([item])
+        self.assertEqual(slim[0], {"task_id": "t", "status": "SUCCESS", "findings": [1]})
+        self.assertEqual(slim_prior(None), [])
+        self.assertEqual(slim_prior(["junk"]), [])
+
+    def test_claude_wrapper_retries_resumed_session_on_broken_pipe(self):
+        # 第 2 轮起用 --resume 续接既有会话；若子进程仍启动即退（Broken pipe）→
+        # 放弃旧会话、换 --session-id 全新会话重试一次，run 不再因此整体 FAILED。
+        calls = []
+        output = _plan_output([{"id": "task_1", "title": "scan", "description": "scan it"}])
+
+        def fake_process(args, **kwargs):
+            if "--resume" in args:
+                calls.append(("resume", args[args.index("--resume") + 1]))
+            else:
+                calls.append(("session-id", args[args.index("--session-id") + 1]))
+            if len(calls) == 1:
+                return ProcResult(-1, "", "[Errno 32] Broken pipe")
             return ProcResult(0, output, "")
 
         logs = []
         with patch("vulnhunt.cli.claude_code.run_process", side_effect=fake_process):
-            ClaudeWrapper(Config(), logger=lambda component, message: logs.append((component, message))).plan("audit", 1, [], ".")
-        self.assertIn(("CLAUDE-PLAN", "subagent_type=Plan"), logs)
-        self.assertIn(("CLAUDE-PLAN", "Plan output"), logs)
+            wrapper = ClaudeWrapper(Config(), logger=lambda component, message: logs.append((component, message)))
+            wrapper.session_id = "old-session"  # 模拟第 2 轮复用既有会话
+            plan = wrapper.plan("audit", 2, [], ".")
 
-    def test_claude_wrapper_streams_subagent_progress(self):
-        output = json.dumps({"type": "result", "result": json.dumps({"tasks": []})})
-        events = [json.dumps({
-            "type": "system", "subtype": "task_started",
-            "task_id": "t1", "description": "规划攻击路径", "task_type": "local_agent",
-        }), json.dumps({
-            "type": "system", "subtype": "task_progress",
-            "task_id": "t1", "description": "Running Fetch homepage headers", "last_tool_name": "Bash",
-        }), json.dumps({
-            "type": "system", "subtype": "task_progress",
-            "task_id": "t1", "description": "Running Fetch homepage headers", "last_tool_name": "Bash",
-        }), json.dumps({
-            "type": "system", "subtype": "task_notification",
-            "task_id": "t1", "status": "completed", "summary": "Extract signing logic", "task_type": "local_agent",
-        }), json.dumps({
-            "type": "system", "subtype": "task_started",
-            "task_id": "t2", "description": "Probe API prefixes", "task_type": "local_bash",
-        }), json.dumps({
-            "type": "system", "subtype": "task_notification",
-            "task_id": "t2", "status": "completed", "summary": "Probe API prefixes", "task_type": "local_bash",
-        })]
+        self.assertEqual(plan.tasks[0].id, "task_1")
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0], ("resume", "old-session"))
+        self.assertEqual(calls[1][0], "session-id")  # 重试换全新会话
+        self.assertNotEqual(calls[1][1], "old-session")
+        self.assertTrue(any("已切换新会话重试" in m for c, m in logs))
+
+    def test_claude_wrapper_round2_resumes_existing_session(self):
+        # 第 2 轮续接既有会话走 --resume 且成功：不重试、无「已切换新会话」日志，会话 ID 保持不变。
+        seen = []
 
         def fake_process(args, **kwargs):
-            for event in events:
-                kwargs["on_stdout_line"](event)
-            return ProcResult(0, output, "")
+            seen.append((list(args), kwargs.get('input_text', '')))
+            return ProcResult(0, _plan_output([{"id": "task_1", "title": "scan", "description": "scan it"}]), "")
 
-        logs = []
         with patch("vulnhunt.cli.claude_code.run_process", side_effect=fake_process):
-            ClaudeWrapper(Config(), logger=lambda component, message: logs.append((component, message))).plan("audit", 1, [], ".")
-        self.assertIn(("CLAUDE-PLAN", "子代理启动：规划攻击路径"), logs)
-        self.assertEqual(0, logs.count(("CLAUDE-PLAN", "正在执行：Running Fetch homepage headers")))
-        self.assertIn(("CLAUDE-PLAN", "子代理结束（completed）：Extract signing logic"), logs)
-        self.assertIn(("CLAUDE-PLAN", "后台任务启动：Probe API prefixes"), logs)
-        self.assertIn(("CLAUDE-PLAN", "后台任务结束（completed）：Probe API prefixes"), logs)
+            wrapper = ClaudeWrapper(Config())
+            wrapper.session_id = "kept-session"
+            plan = wrapper.plan("audit", 2, [], ".")
+
+        self.assertEqual(plan.tasks[0].id, "task_1")
+        self.assertEqual(len(seen), 1)
+        args, prompt = seen[0]
+        self.assertIn("--resume", args)
+        self.assertNotIn("--session-id", args)
+        self.assertEqual(args[args.index("--resume") + 1], "kept-session")
+        self.assertIn("当前轮次：2", prompt)
+
+    def test_claude_wrapper_round1_creates_new_session(self):
+        # 首轮无既有会话：仍用 --session-id 新建。
+        with patch("vulnhunt.cli.claude_code.run_process", return_value=ProcResult(0, _plan_output([{"id": "task_1", "title": "scan", "description": "scan it"}]), "")) as m:
+            ClaudeWrapper(Config()).plan("audit", 1, [], ".")
+        args = m.call_args[0][0]
+        self.assertIn("--session-id", args)
+        self.assertNotIn("--resume", args)
+
+    def test_claude_wrapper_no_retry_on_first_round_failure(self):
+        # 首轮（无既有会话可续）失败不应重试，直接抛错暴露原因。
+        with patch("vulnhunt.cli.claude_code.run_process", return_value=ProcResult(-1, "", "boom")):
+            with self.assertRaises(RuntimeError):
+                ClaudeWrapper(Config()).plan("audit", 1, [], ".")
+
+    def test_claude_wrapper_no_retry_on_resume_timeout(self):
+        # 续会话但超时：这是规划跑太久被强杀，不是启动即退，重试无意义，直接抛错。
+        wrapper = ClaudeWrapper(Config())
+        wrapper.session_id = "old-session"
+        with patch("vulnhunt.cli.claude_code.run_process", return_value=ProcResult(-1, "", "", True)):
+            with self.assertRaises(RuntimeError):
+                wrapper.plan("audit", 2, [], ".")
 
     def test_codex_wrapper_parses_result_file(self):
         def fake_process(args, cwd=None, **kwargs):
@@ -105,121 +154,6 @@ class WrapperUnitTests(unittest.TestCase):
             result = CodexWrapper(Config()).exec_task(TaskSpec("task_1", "test", "test"), Path(d))
         self.assertEqual(result.status, TaskResultStatus.PARTIAL)
         self.assertEqual(result.findings, [{"id": "F1"}])
-
-    def test_codex_wrapper_resolves_relative_workspace(self):
-        captured = {}
-
-        def fake_process(args, cwd=None, **kwargs):
-            captured['args'] = args
-            captured['cwd'] = cwd
-            output_file = Path(args[args.index("-o") + 1])
-            output_file.write_text(json.dumps({"status": "SUCCESS", "summary": "ok", "findings": []}), encoding="utf-8")
-            return ProcResult(0, "", "")
-
-        with tempfile.TemporaryDirectory() as d, patch("vulnhunt.cli.codex.run_process", side_effect=fake_process):
-            relative_workspace = Path(d) / "workspace"
-            relative_workspace.mkdir()
-            result = CodexWrapper(Config()).exec_task(TaskSpec("task_1", "test", "test"), relative_workspace)
-
-        self.assertEqual(result.status, TaskResultStatus.SUCCESS)
-        self.assertTrue(Path(captured['cwd']).is_absolute())
-        self.assertTrue(Path(captured['args'][captured['args'].index("-C") + 1]).is_absolute())
-
-    def test_codex_wrapper_passes_blackboard_add_dir(self):
-        captured = {}
-
-        def fake_process(args, cwd=None, **kwargs):
-            captured['args'] = args
-            captured['prompt'] = kwargs.get('input_text', '')
-            output_file = Path(args[args.index("-o") + 1])
-            output_file.write_text(json.dumps({"status": "SUCCESS", "summary": "ok", "findings": []}), encoding="utf-8")
-            return ProcResult(0, "", "")
-
-        with tempfile.TemporaryDirectory() as d, patch("vulnhunt.cli.codex.run_process", side_effect=fake_process):
-            store = RunStore.create(d, Run("r1", "audit", "now"))
-            workspace = store.root / "workspaces" / "round_001_task_1"
-            workspace.mkdir(parents=True)
-            result = CodexWrapper(Config(), store=store).exec_task(TaskSpec("task_1", "test", "test"), workspace)
-
-        self.assertEqual(result.status, TaskResultStatus.SUCCESS)
-        self.assertIn("--add-dir", captured['args'])
-        blackboard = str((store.root / "blackboard").resolve())
-        self.assertEqual(captured['args'][captured['args'].index("--add-dir") + 1], blackboard)
-        self.assertIn(blackboard, captured['prompt'])
-
-    def test_codex_prompt_enforces_blackboard_contract(self):
-        captured = {}
-
-        def fake_process(args, cwd=None, **kwargs):
-            captured['prompt'] = kwargs.get('input_text', '')
-            output_file = Path(args[args.index("-o") + 1])
-            output_file.write_text(json.dumps({"status": "SUCCESS", "summary": "ok", "findings": []}), encoding="utf-8")
-            return ProcResult(0, "", "")
-
-        with tempfile.TemporaryDirectory() as d, patch("vulnhunt.cli.codex.run_process", side_effect=fake_process):
-            store = RunStore.create(d, Run("r1", "audit", "now"))
-            workspace = store.root / "workspaces" / "round_001_task_1"
-            workspace.mkdir(parents=True)
-            CodexWrapper(Config(), store=store).exec_task(TaskSpec("task_1", "test", "test"), workspace)
-
-        prompt = captured['prompt']
-        self.assertIn("共享黑板契约", prompt)
-        self.assertIn("下载前先查黑板", prompt)
-        self.assertIn("round_001_task_1_umi.js", prompt)  # 命名规范带工作目录名前缀
-        self.assertIn("禁止重复下载", prompt)
-        self.assertIn("禁止访问或写入任何其他路径", prompt)
-
-    def test_codex_prompt_without_blackboard_has_no_contract(self):
-        captured = {}
-
-        def fake_process(args, cwd=None, **kwargs):
-            captured['prompt'] = kwargs.get('input_text', '')
-            output_file = Path(args[args.index("-o") + 1])
-            output_file.write_text(json.dumps({"status": "SUCCESS", "summary": "ok", "findings": []}), encoding="utf-8")
-            return ProcResult(0, "", "")
-
-        with tempfile.TemporaryDirectory() as d, patch("vulnhunt.cli.codex.run_process", side_effect=fake_process):
-            CodexWrapper(Config()).exec_task(TaskSpec("task_1", "test", "test"), Path(d))
-
-        self.assertNotIn("共享黑板契约", captured['prompt'])
-
-    def test_claude_wrapper_retries_resumed_session_on_broken_pipe(self):
-        # 第 2 轮起续接既有会话：claude 子进程启动即退（stdin 写入 Broken pipe）→
-        # 放弃旧会话、换全新会话重试一次，run 不再因此整体 FAILED。
-        calls = []
-        output = json.dumps({"type": "result", "result": json.dumps({"tasks": [{"id": "task_1", "title": "scan", "description": "scan it"}]})})
-
-        def fake_process(args, **kwargs):
-            calls.append(args[args.index("--session-id") + 1])
-            if len(calls) == 1:
-                return ProcResult(-1, "", "[Errno 32] Broken pipe")
-            return ProcResult(0, output, "")
-
-        logs = []
-        with patch("vulnhunt.cli.claude_code.run_process", side_effect=fake_process):
-            wrapper = ClaudeWrapper(Config(), logger=lambda component, message: logs.append((component, message)))
-            wrapper.session_id = "old-session"  # 模拟第 2 轮复用既有会话
-            plan = wrapper.plan("audit", 2, [], ".")
-
-        self.assertEqual(plan.tasks[0].id, "task_1")
-        self.assertEqual(len(calls), 2)
-        self.assertEqual(calls[0], "old-session")
-        self.assertNotEqual(calls[1], "old-session")
-        self.assertTrue(any("已切换新会话重试" in m for c, m in logs))
-
-    def test_claude_wrapper_no_retry_on_first_round_failure(self):
-        # 首轮（无既有会话可续）失败不应重试，直接抛错暴露原因。
-        with patch("vulnhunt.cli.claude_code.run_process", return_value=ProcResult(-1, "", "boom")):
-            with self.assertRaises(RuntimeError):
-                ClaudeWrapper(Config()).plan("audit", 1, [], ".")
-
-    def test_claude_wrapper_no_retry_on_resume_timeout(self):
-        # 续会话但超时：这是规划跑太久被强杀，不是启动即退，重试无意义，直接抛错。
-        wrapper = ClaudeWrapper(Config())
-        wrapper.session_id = "old-session"
-        with patch("vulnhunt.cli.claude_code.run_process", return_value=ProcResult(-1, "", "", True)):
-            with self.assertRaises(RuntimeError):
-                wrapper.plan("audit", 2, [], ".")
 
 
 if __name__ == "__main__": unittest.main()

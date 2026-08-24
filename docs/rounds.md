@@ -1,6 +1,6 @@
 # vulnhunt 轮次制推进策略
 
-> 规划器的核心节奏。每轮 Claude（Plan subagent）只规划本轮该做的事，靠「轮次阶段」约束避免一轮塞满全链路。底层机制见 [architecture.md](architecture.md) §3.3 桥接协议与 [development.md](development.md) §3.1 改提示词指引。
+> 规划器的核心节奏。每轮 Claude（规划大脑）只规划本轮该做的事，靠「轮次阶段」约束避免一轮塞满全链路。底层机制见 [architecture.md](architecture.md) §3.3 提示词与 [development.md](development.md) §3.1 改提示词指引。
 
 ## 1. 三阶段
 
@@ -19,12 +19,12 @@
 ## 3. 跨轮信息流
 
 - **共享黑板** `<run_dir>/blackboard/`：跨轮、跨 codex 保留。第 1 轮镜像的原始资源与派生产物（端点清单、指纹报告、JS 提取物等）供后续轮次读取复用；命名 `<工作目录名>_<原文件名>`。
-- **prior 回填**：上一轮全部 codex 的执行结果会在下一轮规划时作为「上轮结果」回填给规划器；规划器据此（并可读黑板历史产物）决策方向。
-- **同轮依赖**：任务间通过 `depends_on` + `order` 表达。order 小的先执行、同 order 并行、跨波次顺序执行——后一波可可靠读取前一波写入黑板的中间结果。`order` 由顶层 Claude 按 `depends_on` 计算，最终 plan 只保留 `order`。
+- **prior 回填**：上一轮全部 codex 的执行结果会在下一轮规划时作为「上轮结果」回填给规划器（注入前剥掉 stdout/stderr 尾部噪音）；规划器据此（并可读黑板历史产物）决策方向。
+- **同轮依赖**：任务间通过 `depends_on` + `order` 表达。order 小的先执行、同 order 并行、跨波次顺序执行——后一波可可靠读取前一波写入黑板的中间结果。`order` 由系统按 `depends_on` 用确定性代码计算（`models.compute_orders()`），规划器只声明依赖、不输出 order。
 - **查看推进节奏**：`plans/round_NNN_plan.json` 是每轮规划产物；`vulnhunt log <run_dir> [--round N]` 回放某轮 Claude 的规划思考。
 
 ## 4. 与 max_rounds 的关系
 
 `max_rounds`（默认 50）只是硬上限，实际轮数由规划器按阶段自主推进决定。正常节奏约 3~5 轮：1 轮信息收集 → 1 轮定方向并开跑 → 数轮深化利用。
 
-若第 1 轮仍产出漏洞探测任务、或某一轮塞满全链路，说明轮次约束未被遵守——核对 `planner_prompt()` 转发段内的「轮次阶段」小节是否被改动（见 [development.md](development.md) §3.1），相关边界记录在 [known-gaps.md](known-gaps.md)。
+若第 1 轮仍产出漏洞探测任务、或某一轮塞满全链路，说明轮次约束未被遵守——核对 `planner_prompt()` 的「轮次阶段」小节是否被改动（见 [development.md](development.md) §3.1），相关边界记录在 [known-gaps.md](known-gaps.md)。

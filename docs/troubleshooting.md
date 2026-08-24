@@ -16,7 +16,7 @@
 |---|---|---|
 | 运行立刻结束，状态 `FAILED` | `run_loop` 捕获异常归因为 FAILED | 看 `logs/claude_round_001.jsonl` 尾部；`state.json` 里 `status` 确认卡点 |
 | `claude -p` 退出码非 0 → `RuntimeError` | `claude_code.py` 末尾 `if r.exit_code: raise` | 复现：手动跑 `claude -p ... --output-format stream-json` 看 stderr；多半是认证/额度/上下文超限 |
-| `RuntimeError: [Errno 32] Broken pipe` | 续接既有会话的 claude 子进程启动即退、关闭 stdin，父进程写提示词触发 EPIPE（曾多次在第 2 轮 PLANNING 把整次 run 打成 FAILED） | 已自动处理：`plan()` 检测到"续会话 + 非超时失败"会换全新会话重试一次（prior 已随提示词传入）。仍失败时看 `logs/round_<N>.log` / `claude_round_<N>.jsonl` 保留的子进程 stderr 定位真实报错 |
+| `RuntimeError: [Errno 32] Broken pipe` | claude 子进程启动即退、关闭 stdin，父进程写提示词触发 EPIPE。历史根因：用 `--session-id` 续接已落盘的会话 ID → CLI 报 already in use 秒退（该参数语义是"新建"，续接必须用 `--resume`，2026-08-24 实测确认） | 已根治：第 2 轮起 `plan()` 改用 `--resume <id>` 续接；若仍启动即退，自动换全新会话重试一次（prior 已随提示词传入）。再失败时看 `logs/round_<N>.log` / `claude_round_<N>.jsonl` 保留的子进程 stderr 定位真实报错 |
 | Plan 输出无法解析成 JSON → run FAILED | `claude_code.py` `json.loads(raw)` 抛异常 | 检查 `logs/claude_round_*.jsonl` 最后几行：模型是否吐了 Markdown/解释而非纯 JSON；清洗规则只处理 ```json 围栏和"最后一行含 {" 的情况，多行杂讯会失败 |
 | 某个任务 `status=FAILURE` | `codex.py` 20 次轮询仍无有效 `_last_message.json`。注：codex 在 JSON 前写解释文字导致解析失败的路径已修复（`_extract_json` 剥离前置文本，见 [known-gaps](known-gaps.md) §10）；残留原因通常是超时或输出完全非 JSON | 看该 task 的 `codex_<tid>.jsonl`；`tasks/<tid>_result.json` 的 `error/stdout_tail/stderr_tail` 有原始尾部输出 |
 | 所有任务都很快 FAILURE | codex 未认证 / 沙箱不可用 | 手动 `codex exec "" -C <临时目录> ...` 验证；确认 codex 登录态 |

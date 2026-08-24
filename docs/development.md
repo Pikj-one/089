@@ -34,14 +34,14 @@ PYTHONPATH=src python -m unittest discover tests -v   # 跑测试
 
 ### 3.1 改"给 Claude 的提示词"
 
-在 `planner_prompt()` 里改。注意三点契约：
-1. 顶层 Claude 输出必须是**纯 JSON** `{"tasks":[...]}`，系统靠它解析；
-2. `===开始===` 到 `===结束===` 之间会被原样转发给 Plan subagent，禁止在此加"给顶层 Claude 的命令"；
-3. `{{这里由你填写}}` 占位符由顶层 Claude 读 run 目录复制的 `CLAUDE.md` 补全——如果新增了需要注入的上下文，优先用 Python 字符串插值（如 `{workspace_root}`、`{max_workers}`、`{blackboard}`），而不是再加占位符。
+在 `planner_prompt()` 里改（单层直连，没有转发段）。注意三点契约：
+1. Claude 输出必须是**纯 JSON** `{"tasks":[{...,depends_on}]}`，系统靠它解析；**不要让模型输出 order**——order 由 `models.compute_orders()` 按 depends_on 确定性计算；
+2. 授权范围/垃圾漏洞清单不注入提示词，由模型自行读取 run 目录 CLAUDE.md（cwd 即 run 目录）；
+3. 动态上下文一律用 Python 字符串插值（`{goal}`、`{round_no}`、`prior`、`{workspace_root}`、`{max_workers}`、`{blackboard}`），不要加占位符。
 
 给 codex 的提示词在 `src/vulnhunt/cli/codex.py` 的 `exec_task()` 内拼装，含**共享黑板契约**：抓取的可复用原始资源/派生中间结果必须写黑板（命名 `<工作目录名>_<原文件名>`）、下载前先查黑板再复用、私有产物只写 workspace。改动时保持纯 JSON 输出契约（status/summary/findings）。
 
-轮次阶段规则（信息收集轮 / 方向规划轮 / 利用深化轮）也在 `planner_prompt()` 的转发段内，改动时参考 [rounds.md](rounds.md) 保持三阶段约束一致。
+轮次阶段规则（信息收集轮 / 方向规划轮 / 利用深化轮）也在 `planner_prompt()` 内，改动时参考 [rounds.md](rounds.md) 保持三阶段约束一致。
 
 ### 3.2 加一个 TUI 命令
 

@@ -1,6 +1,6 @@
 # vulnhunt 轮次制推进策略
 
-> 规划器的核心节奏。每轮 Claude（规划大脑）只规划本轮该做的事，靠「轮次阶段」约束避免一轮塞满全链路。底层机制见 [architecture.md](architecture.md) §3.3 提示词与 [development.md](development.md) §3.1 改提示词指引。
+> 规划器的核心节奏。每轮 Claude（规划大脑）只规划本轮该做的事，靠「轮次阶段」约束避免一轮塞满全链路。底层机制见 [architecture-planning.md](architecture-planning.md) §1.3 提示词与 [development.md](development.md) §3.1 改提示词指引。
 
 ## 1. 三阶段
 

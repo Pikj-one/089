@@ -1,6 +1,6 @@
 # vulnhunt 开发 / 维护指南
 
-> 面向要改代码的人。先读 [architecture.md](architecture.md) 建立全貌，再对照本文件定位"改哪里"。
+> 面向要改代码的人。先读 [architecture.md](architecture.md) 建立全貌，再按子系统深入 [architecture-planning.md](architecture-planning.md)（规划）/ [architecture-execution.md](architecture-execution.md)（执行与进程）/ [architecture-state.md](architecture-state.md)（落盘与日志），最后对照本文件定位"改哪里"。
 
 ## 1. 环境搭建
 

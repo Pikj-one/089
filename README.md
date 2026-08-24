@@ -24,7 +24,10 @@ vulnhunt start "审计 imou.com 开放设备 API 是否存在未授权访问"   
 | 文档 | 内容 |
 |---|---|
 | [docs/rounds.md](docs/rounds.md) | 轮次制推进策略：信息收集轮 → 方向规划轮 → 利用深化轮，规划器定方向、黑板复用、任务聚焦 |
-| [docs/architecture.md](docs/architecture.md) | 深度架构设计：状态机、stream-json 规划捕获、codex 会话续跑、进程管理、落盘协议（源码级） |
+| [docs/architecture.md](docs/architecture.md) | 深度架构设计（骨架）：总体设计、状态机、设计权衡 + 深层机制导航 |
+| [docs/architecture-planning.md](docs/architecture-planning.md) | 架构深层：PLANNING 规划大脑（claude_code + prompts：调用形态、结果解析、提示词、日志） |
+| [docs/architecture-execution.md](docs/architecture-execution.md) | 架构深层：RUNNING 执行 + 进程管理（workers + codex + base：并发模型、codex 调用形态、会话续跑、run_process） |
+| [docs/architecture-state.md](docs/architecture-state.md) | 架构深层：落盘协议 + 日志体系（state + logview：原子写、目录布局、回放） |
 | [docs/usage.md](docs/usage.md) | 安装与命令、TUI 交互、运行产物目录、安全注意事项 |
 | [docs/configuration.md](docs/configuration.md) | 配置项对照表与 `VULNHUNT_*` 环境变量（含"声明但未使用"字段） |
 | [docs/testing.md](docs/testing.md) | 测试跑法、真实 CLI 门控、各测试文件覆盖点 |

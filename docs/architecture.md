@@ -80,7 +80,7 @@ start (main.py)
 
 ## 3. PLANNING 深层机制（`src/vulnhunt/cli/claude_code.py`）
 
-这是全项目最精巧的部分：**从 claude 的流式输出里实时截获 Plan subagent 产出的 JSON**。
+主 agent 直连规划：喂提示词 → 收集完整 stdout → 从 result envelope 取规划 JSON → `compute_orders()` 确定性排序。
 
 ### 3.1 调用形态
 
@@ -106,7 +106,7 @@ claude -p "" --output-format stream-json --include-partial-messages --verbose \
 
 ### 3.3 提示词（`src/vulnhunt/prompts.py`）
 
-`planner_prompt(goal, round_no, prior, workspace_root, max_workers=10)` 单层直连，结构：
+`planner_prompt(goal, round_no, prior, workspace_root, max_workers=10, blackboard_dir="")` 单层直连，结构：
 
 - **角色**：规划大脑。每轮拆任务列表（JSON），执行交给 codex。
 - **项目上下文**：授权范围与垃圾漏洞清单由模型自行读取当前目录（run 目录）的 CLAUDE.md（依赖 `RunStore.create()` 复制项目根 CLAUDE.md 进 run 目录的行为）；目标 / 当前轮次 / 上轮结果（prior 经 `slim_prior()` 剥掉 stdout_tail/stderr_tail 后 JSON 序列化注入——规划决策只需 status/summary/findings 与证据路径，裸输出尾部是纯噪音且一旦进入续接会话历史就每轮重放）；共享黑板路径；并发上限 `max_workers`。
@@ -171,7 +171,7 @@ codex exec "" -C <workspace> --add-dir <blackboard> --json -o <workspace>/_last_
 - **超时**：`deadline = start + timeout_s`；到点 `_kill_process()`，置 `timed_out=True`。
 - **强杀跨平台**：Windows 用 `taskkill /pid <pid> /T /F`（杀整棵进程树，codex 派生的子进程也会被带走）；POSIX 先 `terminate()` 再 `kill()`。
 - **编码**：统一 `utf-8 errors=replace`，Windows 控制台乱码不致命。
-- **异常**：`OSError`（可执行文件不存在等）返回 `exit_code=-1`。
+- **异常**：`OSError`（可执行文件不存在、stdin 管道破裂等）返回 `exit_code=-1`，并保留子进程已打印的 stderr——否则 claude/codex 启动即退关闭 stdin 时，真实报错会被吞成干巴巴的 `[Errno 32] Broken pipe`（见 [troubleshooting.md](troubleshooting.md) §2）。
 
 ## 6. 落盘协议（`src/vulnhunt/state.py`）
 
@@ -219,7 +219,7 @@ def _write(self, name, obj):
 |---|---|---|
 | 子进程而非 in-process 调用 LLM | 隔离、可强杀、复用成熟 CLI | 协议对接复杂（stream-json 解析） |
 | Codex 任务间通过黑板共享中间结果 + order 分波 | 复用公共资源/中间结果、跨轮保留；同轮跨波次依赖可靠 | 同 order 并行写黑板仍有竞态，共享区靠提示词约束 |
-| Claude 固定 session-id | 跨轮延续规划上下文 | 长 run 上下文成本持续累积（主 agent 直连 + prior 瘦身已把每轮净沉淀压到最小） |
+| Claude 会话跨轮续接（首轮 `--session-id` 新建，之后 `--resume`） | 跨轮延续规划上下文 | 长 run 上下文成本持续累积（主 agent 直连 + prior 瘦身已把每轮净沉淀压到最小） |
 | 每任务独立 workspace + 会话续跑 | 断点续跑、故障隔离 | 磁盘占用、需要 .codex_session 机制 |
 | 纯 stdlib、零依赖 | 部署即用、无供应链面 | 一切轮子自己造（TUI、渲染、并发） |
 | findings 独立落盘方法存在但未接 | 预留扩展（见 known-gaps） | 实际 findings 只藏在 task 结果里 |

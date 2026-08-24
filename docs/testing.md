@@ -6,7 +6,7 @@
 PYTHONPATH=src python -m unittest discover tests -v
 ```
 
-- **当前状态：42 个测试全部通过**（40 ok + 2 跳过），耗时约 5s。
+- **当前状态：46 个测试全部通过**（44 ok + 2 跳过），耗时约 5s。
 - 单元测试全部用 Fake 类（`tests/fakes.py`），**不碰真实 CLI、不发任何请求**，可安全离线跑。
 - 测试代码通过 `sys.path.insert(0, "src")` 直接引用源码，不要求先 `pip install`。
 
@@ -30,13 +30,14 @@ VULNHUNT_REAL_TESTS=1 PYTHONPATH=src python -m unittest tests.test_real_cli -v
 |---|---|
 | `test_orchestrator.py` | 状态机能一路推进到 COMPLETE（FakeClaude/FakeCodex 驱动） |
 | `test_state.py` | RunStore 原子化落盘 roundtrip；新建 run 时自动复制项目 CLAUDE.md |
-| `test_models.py` | Plan / WorkerResult 的 to_dict/from_dict roundtrip |
-| `test_base.py` | `run_process` 生命周期：超时强杀、cancel 置位、正常退出 |
+| `test_models.py` | Plan / TaskSpec / WorkerResult 的 to_dict/from_dict roundtrip；`compute_orders()` 链式/菱形依赖与环处理 |
+| `test_base.py` | `run_process` 生命周期：超时强杀、cancel 置位、正常退出；Broken pipe 时保留子进程 stderr |
+| `test_workers.py` | WorkerPool：按 order 分波执行、超出 max_workers 丢弃、RunStore 建黑板目录 |
 | `test_tui.py` | 心跳：子代理长时间无输出时输出"仍在运行"提示 |
 | `test_logview.py` | 渲染与回放 sink；system/plan 组件区分；进度去重；tool 输入拼装与结果截断 |
-| `test_cli_wrappers.py` | claude wrapper 捕获 Plan subagent、解析规划 JSON、流式进度；codex wrapper 解析结果文件（含前置文本容错）、相对 workspace resolve、黑板契约提示词 |
-| `test_prompts.py` | planner prompt 契约：order/depends_on、去重规划、黑板路径注入、并发上限注入、**轮次阶段规则** |
-| `test_blackboard.py` | 黑板噪音资产清理（CSS/图片/字体/响应头）与小黑板 JS 静默格式化 |
+| `test_cli_wrappers.py` | claude wrapper 解析规划 JSON、按 depends_on 算 order 并清空、prior 瘦身（slim_prior）、第 1 轮新建会话/第 2 轮 `--resume` 续接、续会话失败换新会话重试（首轮失败/超时不重试）；codex wrapper 解析结果文件（含前置文本容错）、黑板契约提示词 |
+| `test_prompts.py` | planner prompt 契约：单层直连无转发段、授权范围走 CLAUDE.md 指引、depends_on 输出契约、动态字段注入、**轮次阶段规则** |
+| `test_blackboard.py` | 黑板噪音资产清理（CSS/图片/字体/响应头）与小黑板 JS 静默格式化（prettier 缺失时跳过格式化用例） |
 | `test_real_cli.py` | 真实 CLI 调用（门控，见上） |
 | `fakes.py` | `FakeClaude`（返回固定 Plan）/ `FakeCodex`（返回固定 WorkerResult），测试桩 |
 

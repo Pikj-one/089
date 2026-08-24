@@ -104,4 +104,4 @@ def save_xxx(self, ...):
 
 ## 7. 优先修复建议（对齐 known-gaps）
 
-按价值排序：**① findings 落盘 → ② 报告完善 → ③ 提示词对齐实际行为 → ④ resume 语义**。①②直接影响产出质量，③降低使用时的意外，④影响长 run 的可靠性。配置字段接线缺口已通过删除未生效字段解决（见 [known-gaps.md](known-gaps.md) 缺口 5）。每个的修复入口都在上文速查表与 [known-gaps.md](known-gaps.md) 中。
+按价值排序：**① findings 落盘 → ② 报告完善 → ③ resume 语义 → ④ 非 Windows 验证**。①②直接影响产出质量，③影响长 run 的可靠性，④是兼容性盲区。提示词对齐（缺口 6）与配置字段清理（缺口 5）已解决；每个的修复入口都在上文速查表与 [known-gaps.md](known-gaps.md) 中。

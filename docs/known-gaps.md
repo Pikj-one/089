@@ -2,13 +2,13 @@
 
 > 接手时如实记录的问题，全部经过源码核实（`src/vulnhunt/`）。**建议先处理有 ⭐ 的条目再投入使用**。修复方向仅供参考，动手前先在 [development.md](development.md) 找对应位置。
 
-## 1. ✅ 已实跑 — 链路端到端跑通（2026-08-23）
+## 1. ✅ 已实跑 — 链路端到端跑通（2026-08-24）
 
-`../vulnhunt-runs` 已有两次真实 run（`2026/08/23/14-17`、`2026/08/23/15-00`）：Claude→Codex→黑板→报告链路跑通，产出真实 High/Medium 发现（未授权文件上传、设备 API 令牌门控绕过、预认证辅助接口、注册状态 oracle 等）。
+`../vulnhunt-runs` 现存两次真实 run（`2026/08/24/10-35`、`2026/08/24/11-23`；更早的 08-23 两次已清理）：Claude→Codex→黑板→报告链路跑通，产出真实 High/Medium 发现（未授权文件上传、设备 API 令牌门控绕过、预认证辅助接口、注册状态 oracle、IDOR 等）。其中 11-23 是主 agent 直连架构重构后的首次完整 run，推进到了第 3 轮。
 
 **遗留问题**（详见 §10）：
-- 三次 run（08-23 两 + 08-24 `10-35`）均在第 2 轮 PLANNING 崩溃，根因是续接既有会话时 claude 子进程启动即退、导致 stdin Broken pipe——已在 §10 复现并修复。
-- 15-00 的 task_3 结果曾因 codex 在 JSON 前写解释文字导致解析失败、findings 全丢——已在 `codex.py` 用 `_extract_json` 修复。
+- ~~多次 run 均在第 2 轮 PLANNING 崩溃~~——根因是续接既有会话时 claude 子进程启动即退、导致 stdin Broken pipe，已在 §10 复现并根治（第 2 轮起改用 `--resume`）。
+- codex 在 JSON 前写解释文字曾导致解析失败、findings 全丢——已在 `codex.py` 用 `_extract_json` 修复。
 
 ## 2. ⭐ findings 不落盘
 
@@ -41,7 +41,7 @@
 
 已实现丢弃（2026-08-23）：`WorkerPool.run()` 只取前 `max_workers` 个任务执行，超出的直接丢弃不排队，并写入 `logs/round_<NNN>.log` 记录被丢弃的任务 ID，便于追踪与下一轮重新规划。
 
-同轮依赖语义（2026-08-23 更新）：原"同一轮任务禁止隐式依赖"规则已移除，改为 `order` 控制——Plan subagent 标注 `depends_on`、顶层 Claude 计算 `order`、`WorkerPool` 按 order 分波执行（同 order 并行、跨波次顺序执行）。整轮封顶仍在 order 分组之前生效，被丢弃任务若被其他任务 `depends_on`，其依赖方可能读到空黑板（已知边界）。
+同轮依赖语义（2026-08-23 引入、2026-08-24 改为代码计算）：`order` 控制执行波次——规划器（主 agent 直连）只声明 `depends_on`，order 由 `models.compute_orders()` 按依赖确定性计算，`WorkerPool` 按 order 分波执行（同 order 并行、跨波次顺序执行）。整轮封顶在 order 分组之前生效，被丢弃任务若被其他任务 `depends_on`，其依赖方可能读到空黑板（已知边界）。
 
 去重（2026-08-23）：同 order 并行任务若都抓取同一批基础资源（页面/JS 包）会各自重复下载——首波黑板为空，"先查黑板"无法避免，需规划侧先安排 order 最低的站点镜像任务写入黑板、分析任务 `depends_on` 它。这依赖模型自觉；若仍出现重复抓取，需在 `codex.py` 提示词或规划规则再强化。
 

@@ -57,7 +57,7 @@ vulnhunt log vulnhunt-runs/2026/08/22/14-30/abc123def456 --round 3
 | `abort` | 请求优雅中断（置 abort 信号，杀子进程） |
 | `quit` / `exit` | 中断并退出 |
 
-- 输出组件着色：`CLAUDE`（顶层）/ `CLAUDE-PLAN-*`（规划子代理）/ `CODEX-*`（执行）/ `ORCH` / `ERROR`。
+- 输出组件着色：`CLAUDE`（规划大脑，含 `CLAUDE-THINK` / `CLAUDE-TOOL` 流细分）/ `CODEX-*`（执行）/ `ORCH` / `ERROR`。`CLAUDE-PLAN-*` 是旧两层架构的组件名，仅回放历史 run 的旧日志时出现。
 - TUI 会把全量输出同步转写到项目根 `tui.log.txt`，非 TTY 时流式输出自动退化为整行日志。
 
 ### `resume`
@@ -70,7 +70,7 @@ vulnhunt log vulnhunt-runs/2026/08/22/14-30/abc123def456 --round 3
 
 ## 4. 运行产物目录结构
 
-一次 run 落盘在 `runs_root/<年>/<月>/<日>/<时-分>/<run_id>/`（`runs_root` 默认 `vulnhunt-runs`）：
+一次 run 落盘在 `runs_root/<年>/<月>/<日>/<时-分>/<run_id>/`（代码默认 `runs`，本项目 `config.toml` 指向仓库外的 `../vulnhunt-runs`）：
 
 ```
 vulnhunt-runs/2026/08/22/14-30/abc123def456/
@@ -96,7 +96,7 @@ vulnhunt-runs/2026/08/22/14-30/abc123def456/
 ## 5. 安全注意事项
 
 - **仅对授权范围（`*.imou.com`）使用**。工具会向目标发送主动请求，且规划目标含"账号、验证码爆破"类任务，无授权使用可能违法。
-- 顶层 Claude 以 `--permission-mode bypassPermissions` 运行、codex 以 `-s danger-full-access` 沙箱运行，**请勿在目标之外的环境中误触发**。
+- 规划 Claude 以 `--permission-mode bypassPermissions` 运行、codex 以 `-s danger-full-access` 沙箱运行，**请勿在目标之外的环境中误触发**。
 - Codex 任务 prompt 严格限制只写本任务 workspace 与共享黑板目录（禁止 `..` / 绝对路径绕过），但这是**提示词约束而非强隔离**——若信任边界敏感，需额外加固。
 - 真实 CLI 测试（`VULNHUNT_REAL_TESTS=1`）会真实调用模型并可能发请求，谨慎开启。
 - `workspaces/`、`logs/` 与 `blackboard/` 里可能残留 codex 抓取的页面、响应、token 类中间数据；黑板内容跨轮保留，交付/归档前请一并清理。

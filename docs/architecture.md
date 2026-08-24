@@ -85,8 +85,14 @@ start (main.py)
 ### 3.1 调用形态
 
 ```python
+# 首轮（新建会话）：--session-id <uuid>，uuid 由 vulnhunt 生成（claude_code.py:40）
 claude -p "" --output-format stream-json --include-partial-messages --verbose \
-       --permission-mode bypassPermissions (--session-id <uuid> | --resume <uuid>)
+       --permission-mode bypassPermissions --session-id <uuid>
+
+# 第 2 轮起（续接同一会话）：--resume <uuid>；上下文跨进程继承，但 permission mode
+# 不随会话继承——--permission-mode bypassPermissions 必须每轮显式传，否则回落默认权限
+claude -p "" --output-format stream-json --include-partial-messages --verbose \
+       --permission-mode bypassPermissions --resume <uuid>
 ```
 
 - `-p` + stdin 传入 `planner_prompt()`（见 3.3）。
@@ -137,7 +143,12 @@ with ThreadPoolExecutor(max_workers=self.config.max_workers) as pool:
 ### 4.2 Codex 调用形态
 
 ```python
+# fresh 分支（workspace 无 .codex_session，codex.py:76-77）：
+#   单 store 场景（vulnhunt 正常运行）带共享黑板：
 codex exec "" -C <workspace> --add-dir <blackboard> --json -o <workspace>/_last_message.json \
+      -s danger-full-access --skip-git-repo-check --color never
+#   无 store（黑测单跑/测试）时省略 --add-dir：
+codex exec "" -C <workspace> --json -o <workspace>/_last_message.json \
       -s danger-full-access --skip-git-repo-check --color never
 ```
 
@@ -154,7 +165,15 @@ codex exec "" -C <workspace> --add-dir <blackboard> --json -o <workspace>/_last_
 
 ### 4.3 会话续跑
 
-- `exec_task` 先查 workspace 里是否有 `.codex_session`：有则走 `codex exec resume <id> - ...`（同一会话继续，保留历史上下文）。
+```python
+# resume 分支（workspace 有 .codex_session，内容即 <session_id>；codex.py:75）：
+# 上下文记忆跨进程保留，但 sandbox_policy 不随会话继承——全权沙箱只能靠该 flag，
+# 且 resume 不接受 -s/--add-dir/--color（exec-only 标志）
+codex exec resume <session_id> - --json -o <workspace>/_last_message.json \
+      --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox
+```
+
+- `exec_task` 先查 workspace 里是否有 `.codex_session`：有则走 resume 分支（同一会话继续，保留历史上下文）。
 - 首次运行：从 stdout 里找 `type == "thread.started"` 事件，取 `thread_id` 写入 `.codex_session`。
 - 效果：同一 task 跨轮/断点续跑时，Codex 还记得上一轮的思考，而不是从头再来。
 - 沙箱不继承：实测 `codex exec resume` 不会恢复会话记录的 `sandbox_policy`（`session_meta` 存了 `danger-full-access`，resume 仍回落默认沙箱），且 resume 不接受 `-s`/`--add-dir`。因此 resume 分支显式传 `--dangerously-bypass-approvals-and-sandbox` 取得全权沙箱（`codex.py:71`），黑板与工作目录才能读写——**勿误以为配置随会话继承而省略该 flag**。

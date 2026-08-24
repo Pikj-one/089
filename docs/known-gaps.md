@@ -55,11 +55,20 @@
 
 **修复建议**：在 Linux/macOS 各跑一遍 `test_base.py` 与一次试运行，确认 `_kill_process` 的 POSIX 分支与 codex 参数在非 Windows 下正常。
 
-## 9. resume 未验证
+## 9. ✅ resume 全链路已验证 — 含框架层（2026-08-25）
 
-`resume` 命令与中断后续跑逻辑已有单元测试与真实 CLI 门控测试覆盖（2026-08-24），框架层真实运行风险未验证。**CLI 层实测结论**：`codex exec resume` 能续接会话并保留思考记忆（`turn.completed` 的 `cached_input_tokens` 可见跨轮上下文），但**不继承 `session_meta` 的 `sandbox_policy`**——不加 flag 时回落默认沙箱（cwd=workspace 为 `workspace-write`，共享黑板被拒写）。已修复：`codex.py` resume 分支显式传 `--dangerously-bypass-approvals-and-sandbox` 获得全权（等价 fresh 的 danger-full-access）。claude 侧 `--resume` 续接亦经 CLI 实测（2026-08-24）：跨进程续接恢复上下文记忆（resume 的 `usage.cache_read_input_tokens` 可见整段历史被加载），但 **permission mode 同样不随会话继承**——resume 不传 `--permission-mode bypassPermissions` 时回落默认权限（`-p` 非交互无法弹授权，连读 run 目录文件都被拒）。因 `claude_code.py` 每轮调用都显式传该 flag，claude resume 分支行为正确、无需额外改动；勿因"权限在首轮已授"而省略该参数。未验证的只剩框架层语义：RUNNING 中断后 resume 会**重跑整轮当前 plan**（不会跳过已完成任务），已完成的 task 会续跑会话但探测动作会重复执行。
+resume 三级已全部实测闭环：CLI 层（codex/claude 各自 resume 行为见 [architecture-execution.md](architecture-execution.md) §1.3 与 [architecture-planning.md](architecture-planning.md) §1.1）、**框架层**（2026-08-25 真实端到端）。
 
-**修复建议**：实跑一次中断→resume 全流程；如希望"跳过已完成任务"，需要在 WorkerPool 里先读磁盘已有的 `tasks/<tid>_result.json` 再决定是否重派。
+**实测过程**：`vulnhunt start` 以 `VULNHUNT_MAX_ROUNDS=2` 启动 → r1 RUNNING 中（site_mirror 执行中）硬杀主进程树（taskkill /T /F）→ `vulnhunt resume <run_dir>` 续跑。结果：崩溃的 r1 完整重跑（site_mirror 从零重跑 ~20min，5/5 任务 SUCCESS，43 findings）→ 跨入 r2 规划与执行（6/6 任务，52 findings）→ 推进到 r3。累计 11 任务 95 findings，全部真实。
+
+**确认的框架层语义**（与 CLI 层结论一致）：
+- RUNNING 中断后 resume **重跑整轮当前 plan**——已完成任务不跳过（WorkerPool 不读磁盘结果决定重派），中断任务因无 `.codex_session` 从零重跑（探测动作重复执行）；
+- 跨轮推进正常：r1→r2 规划由**新 claude 会话**完成（session_id 只在内存、resume 后丢失），prior=上轮结果注入，上下文不丢；
+- order 分波正常：wave 1（order 0）完成后才启动 wave 2（同波并行、跨波屏障）。
+
+**新发现的坑**：`vulnhunt resume` 重新读取 config.toml 的 `max_rounds`（而非 run 的 `config_snapshot`）。本次 start 用 `VULNHUNT_MAX_ROUNDS=2`、resume 未带该变量 → resume 按 15 轮继续，r2 完成后未停、继续规划 r3。若 run 的终止轮次重要，resume 时需用相同配置（或把"resume 可延长轮次"当作特性）。
+
+**可选优化**：若希望"跳过已完成任务"，需在 WorkerPool 里先读磁盘已有的 `tasks/<tid>_result.json` 再决定是否重派。
 
 ## 10. ✅ codex 结果解析容错 + 轮次阶段提示词 — 已解决（2026-08-23）
 

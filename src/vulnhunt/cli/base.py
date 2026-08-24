@@ -25,7 +25,7 @@ def _kill_process(p):
             pass
         p.wait(timeout=5)
 def run_process(args,cwd=None,env=None,timeout_s=60,input_text="",on_stdout_line=None,cancel_event=None):
-    start=time.monotonic(); out=[]; err=[]
+    start=time.monotonic(); out=[]; err=[]; ts=[]
     try:
         p=subprocess.Popen(args,cwd=cwd,env=env or os.environ.copy(),stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,encoding='utf-8',errors='replace',shell=False)
         def read(stream,bucket,callback=None):
@@ -51,4 +51,9 @@ def run_process(args,cwd=None,env=None,timeout_s=60,input_text="",on_stdout_line
             try: stream.close()
             except (OSError, ValueError): pass
         return ProcResult(p.returncode,''.join(out),''.join(err),timed_out,time.monotonic()-start)
-    except OSError as e: return ProcResult(-1,'',str(e),False,time.monotonic()-start)
+    except OSError as e:
+        # 子进程启动失败或 stdin 管道破裂（如 claude/codex 启动即退、关闭 stdin 导致 BrokenPipeError）：
+        # 不要丢弃子进程已打印的 stderr，否则真实错误被吞成干巴巴的 "[Errno 32] Broken pipe"，
+        # 会让整次 run 莫名 FAILED 且无从排查。子进程没输出时退回异常本身。
+        [t.join(timeout=2) for t in ts]
+        return ProcResult(-1,'',''.join(err) or str(e),False,time.monotonic()-start)

@@ -93,7 +93,7 @@ claude -p "" --output-format stream-json --include-partial-messages --verbose \
 - `--output-format stream-json`：每行一个 JSON 事件，供实时解析。
 - `--include-partial-messages`：**关键**——让 tool_use 的 `input_json_delta` 增量可见，才能拼出 Plan subagent 正在生成的 tasks JSON。
 - `--permission-mode bypassPermissions`：允许 Claude 读 run 目录里的 CLAUDE.md 等文件而不弹权限。
-- 固定 `--session-id`：跨轮续上下文（同一大脑延续历史）。
+- 固定 `--session-id`：跨轮续上下文（同一大脑延续历史）；若续会话的子进程启动即退（Windows 上曾表现为 stdin Broken pipe），`plan()` 自动放弃旧会话、换全新会话重试一次——prior 已随提示词传入，规划上下文不丢。
 
 ### 3.2 Plan subagent 的 JSON 捕获（三路并行）
 

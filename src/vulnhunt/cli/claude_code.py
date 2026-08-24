@@ -10,7 +10,7 @@ class ClaudeWrapper:
     def health_check(self): return run_process([resolve_executable([self.config.claude_exec]),'--version'],timeout_s=20).exit_code==0
     def plan(self,goal,round_no,prior,work_dir):
         work_dir=Path(work_dir).resolve()
-        self.session_id=self.session_id or str(uuid.uuid4()); args=[resolve_executable([self.config.claude_exec]),'-p','', '--output-format','stream-json','--include-partial-messages','--verbose','--permission-mode','bypassPermissions','--session-id',self.session_id]
+        resuming=bool(self.session_id)  # 本轮是否续接既有会话（第 2 轮起为 True）
         subagent_input_parts={}
         tool_ids_by_index={}
         plan_tool_ids=set()
@@ -83,9 +83,22 @@ class ClaudeWrapper:
                             pass
             plan_stream=is_plan_stream(ev, event, plan_tool_ids)
             for action in self._renderer.feed(ev, plan_stream): apply(action)
-        r=run_process(args,cwd=work_dir,input_text=planner_prompt(goal,round_no,prior,work_dir,self.config.max_workers),timeout_s=self.config.claude_timeout_s,cancel_event=self.cancel_event,on_stdout_line=on_line)
-        if r.exit_code:
-            cause=(f"claude 规划超时（>{self.config.claude_timeout_s}s），已强制结束进程" if r.timed_out else r.stderr) or 'claude failed'
+        r=None
+        for attempt in range(2):
+            self.session_id=self.session_id or str(uuid.uuid4())
+            args=[resolve_executable([self.config.claude_exec]),'-p','', '--output-format','stream-json','--include-partial-messages','--verbose','--permission-mode','bypassPermissions','--session-id',self.session_id]
+            subagent_input_parts.clear(); tool_ids_by_index.clear(); plan_tool_ids.clear(); plan_subagent_logged=False
+            r=run_process(args,cwd=work_dir,input_text=planner_prompt(goal,round_no,prior,work_dir,self.config.max_workers),timeout_s=self.config.claude_timeout_s,cancel_event=self.cancel_event,on_stdout_line=on_line)
+            if not r.exit_code:
+                break
+            cause=(f"claude 规划超时（>{self.config.claude_timeout_s}s），已强制结束进程" if r.timed_out else r.stderr) or f'claude failed (exit={r.exit_code})'
+            if attempt==0 and resuming and not r.timed_out:
+                # 续接既有会话的 claude 子进程启动即退（Windows 上表现为向 stdin 写入 Broken pipe），
+                # 此前曾导致第 2 轮起整次 run 崩溃 FAILED。放弃该会话、换全新会话重试一次；
+                # prior 结果已随提示词传入，规划上下文不丢。
+                self.logger('CLAUDE', '规划子进程启动失败（疑似续会话异常），已切换新会话重试')
+                self.session_id=None
+                continue
             raise RuntimeError(cause)
         envelopes=[]
         for line in r.stdout.splitlines():

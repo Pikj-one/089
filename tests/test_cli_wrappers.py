@@ -183,5 +183,43 @@ class WrapperUnitTests(unittest.TestCase):
 
         self.assertNotIn("共享黑板契约", captured['prompt'])
 
+    def test_claude_wrapper_retries_resumed_session_on_broken_pipe(self):
+        # 第 2 轮起续接既有会话：claude 子进程启动即退（stdin 写入 Broken pipe）→
+        # 放弃旧会话、换全新会话重试一次，run 不再因此整体 FAILED。
+        calls = []
+        output = json.dumps({"type": "result", "result": json.dumps({"tasks": [{"id": "task_1", "title": "scan", "description": "scan it"}]})})
+
+        def fake_process(args, **kwargs):
+            calls.append(args[args.index("--session-id") + 1])
+            if len(calls) == 1:
+                return ProcResult(-1, "", "[Errno 32] Broken pipe")
+            return ProcResult(0, output, "")
+
+        logs = []
+        with patch("vulnhunt.cli.claude_code.run_process", side_effect=fake_process):
+            wrapper = ClaudeWrapper(Config(), logger=lambda component, message: logs.append((component, message)))
+            wrapper.session_id = "old-session"  # 模拟第 2 轮复用既有会话
+            plan = wrapper.plan("audit", 2, [], ".")
+
+        self.assertEqual(plan.tasks[0].id, "task_1")
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0], "old-session")
+        self.assertNotEqual(calls[1], "old-session")
+        self.assertTrue(any("已切换新会话重试" in m for c, m in logs))
+
+    def test_claude_wrapper_no_retry_on_first_round_failure(self):
+        # 首轮（无既有会话可续）失败不应重试，直接抛错暴露原因。
+        with patch("vulnhunt.cli.claude_code.run_process", return_value=ProcResult(-1, "", "boom")):
+            with self.assertRaises(RuntimeError):
+                ClaudeWrapper(Config()).plan("audit", 1, [], ".")
+
+    def test_claude_wrapper_no_retry_on_resume_timeout(self):
+        # 续会话但超时：这是规划跑太久被强杀，不是启动即退，重试无意义，直接抛错。
+        wrapper = ClaudeWrapper(Config())
+        wrapper.session_id = "old-session"
+        with patch("vulnhunt.cli.claude_code.run_process", return_value=ProcResult(-1, "", "", True)):
+            with self.assertRaises(RuntimeError):
+                wrapper.plan("audit", 2, [], ".")
+
 
 if __name__ == "__main__": unittest.main()

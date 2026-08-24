@@ -7,7 +7,7 @@
 `../vulnhunt-runs` 已有两次真实 run（`2026/08/23/14-17`、`2026/08/23/15-00`）：Claude→Codex→黑板→报告链路跑通，产出真实 High/Medium 发现（未授权文件上传、设备 API 令牌门控绕过、预认证辅助接口、注册状态 oracle 等）。
 
 **遗留问题**（详见 §10）：
-- 两次 run 都在第 2 轮 PLANNING 崩溃且无错误记录——已给 `orchestrator.run_loop()` 加失败日志，待下次复现定位（怀疑与 claude 固定 `--session-id` 跨轮续上下文过大有关）。
+- 三次 run（08-23 两 + 08-24 `10-35`）均在第 2 轮 PLANNING 崩溃，根因是续接既有会话时 claude 子进程启动即退、导致 stdin Broken pipe——已在 §10 复现并修复。
 - 15-00 的 task_3 结果曾因 codex 在 JSON 前写解释文字导致解析失败、findings 全丢——已在 `codex.py` 用 `_extract_json` 修复。
 
 ## 2. ⭐ findings 不落盘
@@ -67,4 +67,4 @@
 
 - **codex 结果解析**：codex 会在 `_last_message.json` 的 JSON 前写解释文字（实测 `All work complete. Final report written to ...`），原 `json.loads(raw)` 直接失败 → 20 次轮询全败 → 任务被标 FAILURE、findings 全部丢失（一次真实 run 的 task_3 因此丢掉全部 High 发现）。已修复：`cli/codex.py` 新增 `_extract_json()`，取第一个 `{` 到最后一个 `}` 的子串再解析。
 - **轮次阶段提示词**：`prompts.py` 转发段新增「轮次阶段」规则——第 1 轮信息收集轮（严禁漏洞探测类任务）、第 2 轮方向规划轮（规划器直接定方向，不设单独方向分析 codex）、第 3 轮起利用深化轮（每轮 1~3 个方向）；禁止"测试所有漏洞类型"这类塞满全链路的巨型任务。
-- **待复现**：两次真实 run 都在第 2 轮 PLANNING 崩溃且无任何错误记录。已给 `orchestrator.run_loop()` 的异常分支加日志（`logs/round_<NNN>.log` 写 `run failed: <异常>`）；下次复现即可定位。怀疑与 claude 固定 `--session-id` 跨轮续上下文过大有关，待确认后单独处理。
+- **第 2 轮 PLANNING Broken pipe — 已复现并修复（2026-08-24）**：三次真实 run（08-23 两 + 08-24 `10-35`）全部在第 2 轮 PLANNING 崩溃。08-24 那次首次捕获异常（`logs/round_002.log` → `run failed: RuntimeError: [Errno 32] Broken pipe`）。完整链路：`plan()` 复用同一 `--session-id` 续接既有会话 → claude 子进程启动即退（零 stdout 输出、关闭 stdin）→ 父进程向 stdin 写提示词触发 `BrokenPipeError` → `cli/base.py` 的 `except OSError` 把子进程 stderr 整个丢弃、返回 `ProcResult(-1,'',str(e))` → `cli/claude_code.py` 据此 `raise RuntimeError("[Errno 32] Broken pipe")` → `run_loop` 标 FAILED。修复两处：① `cli/base.py` `run_process` 的 OSError 分支改为保留子进程已打印的 stderr；② `cli/claude_code.py` `plan()` 在"续接既有会话且非超时失败"时放弃旧会话、换全新会话重试一次（prior 已随提示词传入，规划上下文不丢）。**子进程为何启动即退仍未确证**——修复①后若再失败，`logs/round_<N>.log` 里会直接看到子进程 stderr 的真实报错，届时按需改用"每轮全新会话"方案。

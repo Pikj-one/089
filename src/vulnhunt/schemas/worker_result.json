@@ -1,0 +1,30 @@
+{
+  "type": "object",
+  "properties": {
+    "status": { "type": "string" },
+    "summary": { "type": "string" },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "severity": { "type": "string" },
+          "description": { "type": "string" },
+          "evidence": { "type": "string" },
+          "url": { "type": "string" },
+          "method": { "type": "string" },
+          "parameter": { "type": "string" },
+          "payload": { "type": "string" },
+          "impact": { "type": "string" },
+          "remediation": { "type": "string" },
+          "confidence": { "type": "string" },
+          "reference": { "type": "string" },
+          "detail": { "type": "string" }
+        }
+      }
+    }
+  },
+  "required": ["status", "summary", "findings"]
+}

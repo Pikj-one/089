@@ -96,7 +96,7 @@ def save_xxx(self, ...):
 
 ## 6. 发布流程
 
-1. 改 `pyproject.toml` 的 `version`（当前 0.8.0）；
+1. 改 `pyproject.toml` 的 `version`（当前 0.10.0）；
 2. 同步 `src/vulnhunt/__init__.py` 的 `__version__`；
 3. 跑全量测试确认绿；
 4. `pip install -e .` 本地验证新版本命令可用（如改了 CLI）；

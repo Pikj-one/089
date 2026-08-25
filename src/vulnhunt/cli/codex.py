@@ -20,6 +20,10 @@ class CodexWrapper:
     def __init__(self,config,logger=None,store=None): self.config=config; self.logger=logger or (lambda component,message: None); self.cancel_event=None; self.store=store
     def health_check(self): return run_process([resolve_executable([self.config.codex_exec]),'--version'],timeout_s=20).exit_code==0
     def exec_task(self,task,workspace):
+        # --output-schema：用 JSON Schema 硬约束最终回复结构，把结果格式从「靠 prompt 约定」升级为
+        # 「生成端强制」；_extract_json 兜底仍保留（模型偶尔在 JSON 前后夹解释文字/超 schema 字段）。
+        schema_file=Path(__file__).resolve().parent.parent/'schemas'/'worker_result.json'
+        schema_args=['--output-schema',str(schema_file)]
         # workspace 可能来自 runs_root 的相对路径，而子进程同时使用它作为 cwd。
         # Codex 会相对于 cwd 再解析 -C/-o；因此这里必须先固定为绝对路径，
         # 避免出现 workspace\runs\... 这样的错误嵌套路径（Windows 下报 os error 3）。
@@ -72,9 +76,9 @@ class CodexWrapper:
         # resume 仍回落默认沙箱：cwd=workspace 时为 workspace-write、共享黑板目录被沙箱拒绝写入）。
         # resume 不接受 -s/--add-dir（exec-only 标志），全权沙箱只能靠 --dangerously-bypass-approvals-and-sandbox
         # （语义 ≈ fresh 分支的 danger-full-access，仅对授权目标使用）。
-        if session_id: args=[exe,'exec','resume',session_id,'-','--json','-o',str(output_file),'--skip-git-repo-check','--dangerously-bypass-approvals-and-sandbox']
-        elif blackboard: args=[exe,'exec','', '-C',str(workspace),'--add-dir',str(blackboard),'--json','-o',str(output_file),'-s',self.config.codex_sandbox,'--skip-git-repo-check','--color','never']
-        else: args=[exe,'exec','', '-C',str(workspace),'--json','-o',str(output_file),'-s',self.config.codex_sandbox,'--skip-git-repo-check','--color','never']
+        if session_id: args=[exe,'exec','resume',session_id,'-','--json','-o',str(output_file),*schema_args,'--skip-git-repo-check','--dangerously-bypass-approvals-and-sandbox']
+        elif blackboard: args=[exe,'exec','', '-C',str(workspace),'--add-dir',str(blackboard),'--json','-o',str(output_file),'-s',self.config.codex_sandbox,*schema_args,'--skip-git-repo-check','--color','never']
+        else: args=[exe,'exec','', '-C',str(workspace),'--json','-o',str(output_file),'-s',self.config.codex_sandbox,*schema_args,'--skip-git-repo-check','--color','never']
         r=run_process(args,cwd=workspace,input_text=prompt,timeout_s=self.config.codex_timeout_s,cancel_event=self.cancel_event,on_stdout_line=on_line); p=output_file
         for line in r.stdout.splitlines():
             try:
